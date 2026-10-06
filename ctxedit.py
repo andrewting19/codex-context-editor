@@ -41,7 +41,10 @@ def parse_thread_id(text: str) -> str:
 
 
 def state_db() -> str | None:
-    dbs = sorted(glob.glob(os.path.join(CODEX_HOME, "state_*.sqlite")))
+    def ver(p: str) -> int:
+        m = re.search(r"state_(\d+)\.sqlite$", p)
+        return int(m.group(1)) if m else -1
+    dbs = sorted(glob.glob(os.path.join(CODEX_HOME, "state_*.sqlite")), key=ver)
     return dbs[-1] if dbs else None
 
 
@@ -378,7 +381,7 @@ def write_fork(source_id: str, items: list[dict], model: str | None, effort: str
     day_dir = os.path.join(CODEX_HOME, "sessions", now.strftime("%Y"), now.strftime("%m"), now.strftime("%d"))
     os.makedirs(day_dir, exist_ok=True)
     path = os.path.join(day_dir, f"rollout-{now.strftime('%Y-%m-%dT%H-%M-%S')}-{new_id}.jsonl")
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         for o in out:
             f.write(json.dumps(o, ensure_ascii=False, separators=(",", ":")) + "\n")
     return {"id": new_id, "path": path, "cwd": meta.get("cwd"), "item_count": len(items)}

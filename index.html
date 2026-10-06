@@ -18,7 +18,8 @@ button.primary{background:var(--acc);color:#0b0d12;border-color:var(--acc);font-
 button.small{padding:3px 8px;font-size:12px;border-radius:6px}
 button.danger:hover{border-color:var(--bad);color:#fca5a5}
 #ref{flex:1;min-width:200px}
-main{display:grid;grid-template-columns:320px 1fr;gap:0;min-height:calc(100vh - 58px)}
+main{display:grid;grid-template-columns:320px minmax(0,1fr);gap:0;min-height:calc(100vh - 58px)}
+main>*{min-width:0}
 aside{border-right:1px solid var(--line);padding:16px;position:sticky;top:58px;height:calc(100vh - 58px);overflow:auto;background:var(--panel)}
 aside label{display:block;color:var(--mute);font-size:12px;margin:12px 0 4px}
 aside select,aside input[type=text]{width:100%}
@@ -48,7 +49,7 @@ aside select,aside input[type=text]{width:100%}
 .badge.user{background:#1e3a8a;color:#dbeafe}.badge.assistant{background:#14532d;color:#dcfce7}.badge.developer{background:#78350f;color:#fef3c7}.badge.tool{background:#4c1d95;color:#ede9fe}
 .tag{font-size:11px;color:var(--mute)}
 .tag.edited{color:#fbbf24}.tag.new{color:#34d399}
-.actions{margin-left:auto;display:flex;gap:4px;opacity:.55}
+.actions{margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px;opacity:.55}
 .card:hover .actions{opacity:1}
 .body{white-space:pre-wrap;word-break:break-word;margin-top:8px;font-size:13px;max-height:none}
 .body.mono{font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;color:#cbd5e1}
@@ -80,7 +81,7 @@ aside select,aside input[type=text]{width:100%}
   <label>Fork name</label>
   <input type="text" id="name" placeholder="Name in the Codex sidebar">
   <div class="check"><input type="checkbox" id="strip" checked><span>Remove reasoning items<br><span class="note">Encrypted reasoning from one model can fail on another model.</span></span></div>
-  <div class="check"><input type="checkbox" id="openApp" checked><span>Open the fork in Codex</span></div>
+  <div class="check" id="openRow"><input type="checkbox" id="openApp" checked><span>Open the fork in Codex</span></div>
   <div style="margin-top:16px">
     <div class="stat"><span>Items kept</span><b id="sKept">0</b></div>
     <div class="stat"><span>Removed</span><b id="sDel">0</b></div>
@@ -173,6 +174,11 @@ const badgeCls = k => ({user:'user',assistant:'assistant',developer:'developer',
 // ---- load
 async function api(path, opts){ const r = await fetch(path, opts); const j = await r.json(); if (!r.ok) throw new Error(j.error||r.statusText); return j; }
 async function loadModels(){
+  try {
+    S.info = await api('/api/info');
+    if (!S.info.can_open_links){ $('#openRow').style.display='none'; $('#openApp').checked=false; }
+    if (S.info.codex_error) toast('Codex problem: '+S.info.codex_error, 9000);
+  } catch(e){ S.info = {}; }
   try { S.models = await api('/api/models'); } catch(e){ S.models = []; toast('Could not load models: '+e.message); }
 }
 function fillModels(current){
@@ -373,7 +379,8 @@ async function fork(){
       strip_reasoning: $('#strip').checked, open: $('#openApp').checked })});
     const box = el('div','result'); box.append(el('div',null,'✅ Fork created with '+res.item_count+' items in '+res.turns+' turns.'));
     const a = el('a',null,res.link); a.href = res.link; box.append(a);
-    box.append(el('div','note','Send your next message in Codex to continue from this context.'));
+    box.append(el('div','note','Send your next message in Codex to continue from this context. From a terminal: codex resume '+res.id));
+    for (const w of (res.warnings||[])) box.append(el('div','note','⚠️ '+w));
     const r = $('#result'); r.innerHTML=''; r.append(box);
     toast('Fork created: '+res.id);
   } catch(e){ toast('Fork failed: '+e.message, 7000); }
