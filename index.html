@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Codex Context Editor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{--bg:#0f1115;--panel:#161922;--card:#1b1f2a;--line:#2a2f3d;--fg:#e6e8ee;--mute:#8b93a7;--acc:#7aa2ff;--user:#3b82f6;--asst:#22c55e;--dev:#f59e0b;--tool:#a78bfa;--ctx:#64748b;--bad:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Inter",sans-serif}
+header{display:flex;gap:10px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+header h1{font-size:15px;margin:0 8px 0 0;white-space:nowrap}
+input,select,textarea,button{font:inherit;color:var(--fg);background:#0c0e13;border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+textarea{width:100%;font:12.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical}
+button{cursor:pointer;background:#232838}
+button:hover{border-color:var(--acc)}
+button.primary{background:var(--acc);color:#0b0d12;border-color:var(--acc);font-weight:600}
+button.small{padding:3px 8px;font-size:12px;border-radius:6px}
+button.danger:hover{border-color:var(--bad);color:#fca5a5}
+#ref{flex:1;min-width:200px}
+main{display:grid;grid-template-columns:320px 1fr;gap:0;min-height:calc(100vh - 58px)}
+aside{border-right:1px solid var(--line);padding:16px;position:sticky;top:58px;height:calc(100vh - 58px);overflow:auto;background:var(--panel)}
+aside label{display:block;color:var(--mute);font-size:12px;margin:12px 0 4px}
+aside select,aside input[type=text]{width:100%}
+.row{display:flex;gap:8px;align-items:center}
+.check{display:flex;gap:8px;align-items:flex-start;margin-top:10px;color:var(--fg);font-size:13px}
+.check input{margin-top:3px}
+.stat{display:flex;justify-content:space-between;color:var(--mute);font-size:12.5px;margin:3px 0}
+.stat b{color:var(--fg);font-weight:600}
+.note{font-size:12px;color:var(--mute);margin-top:8px}
+.warn{font-size:12px;color:#fbbf24;margin-top:8px}
+.result{margin-top:14px;padding:10px;border:1px solid var(--line);border-radius:8px;background:#0c0e13;font-size:13px;word-break:break-all}
+.result a{color:var(--acc)}
+#list{padding:14px 22px 120px;max-width:1100px}
+.filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:10px 22px;border-bottom:1px solid var(--line);position:sticky;top:58px;background:var(--bg);z-index:4}
+.chip{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--mute)}
+.chip.on{color:var(--fg);border-color:var(--acc);background:#1d2540}
+#search{margin-left:auto;width:240px}
+.turn{margin:22px 0 8px;color:var(--mute);font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:8px;align-items:center}
+.turn:after{content:"";flex:1;border-top:1px solid var(--line)}
+.card{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--ctx);border-radius:10px;margin:8px 0;padding:10px 12px}
+.card.user{border-left-color:var(--user)}.card.assistant{border-left-color:var(--asst)}.card.developer{border-left-color:var(--dev)}.card.tool{border-left-color:var(--tool)}
+.card.deleted{opacity:.38}.card.deleted .body{text-decoration:line-through}
+.card.aftercut{opacity:.28}
+.card.cut{box-shadow:0 0 0 2px var(--acc)}
+.card .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:#2a3042;color:#cbd5e1}
+.badge.user{background:#1e3a8a;color:#dbeafe}.badge.assistant{background:#14532d;color:#dcfce7}.badge.developer{background:#78350f;color:#fef3c7}.badge.tool{background:#4c1d95;color:#ede9fe}
+.tag{font-size:11px;color:var(--mute)}
+.tag.edited{color:#fbbf24}.tag.new{color:#34d399}
+.actions{margin-left:auto;display:flex;gap:4px;opacity:.55}
+.card:hover .actions{opacity:1}
+.body{white-space:pre-wrap;word-break:break-word;margin-top:8px;font-size:13px;max-height:none}
+.body.mono{font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;color:#cbd5e1}
+.more{color:var(--acc);cursor:pointer;font-size:12px;margin-top:4px;display:inline-block}
+.cutline{margin:10px 0;padding:8px 12px;border:1px dashed var(--acc);border-radius:8px;color:var(--acc);font-size:12.5px;display:flex;justify-content:space-between;align-items:center}
+.editor{margin-top:8px}
+.editor .row{margin-top:6px;justify-content:flex-end}
+.empty{color:var(--mute);padding:60px 0;text-align:center}
+#winBar{display:none;padding:10px 22px;border-bottom:1px solid var(--line);background:#121520;gap:10px;align-items:center}
+#winBar select{flex:1;min-width:0}
+#winBar .note{margin:0;white-space:nowrap}
+.winnote{margin:12px 0 0;padding:8px 12px;border:1px solid #3b4a7a;border-radius:8px;background:#151c33;font-size:12.5px;color:#c7d2fe}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#232838;border:1px solid var(--line);padding:10px 16px;border-radius:8px;display:none;z-index:20;max-width:80vw}
+</style>
+</head>
+<body>
+<header>
+  <h1>✂️ Context Editor</h1>
+  <input id="ref" placeholder="Paste codex://threads/<id> or a thread id" autocomplete="off">
+  <button class="primary" id="loadBtn">Load</button>
+</header>
+<main>
+<aside>
+  <div id="info" class="note">Load a thread to begin.</div>
+  <label>Model for the fork</label>
+  <select id="model"></select>
+  <label>Reasoning effort</label>
+  <select id="effort"></select>
+  <label>Fork name</label>
+  <input type="text" id="name" placeholder="Name in the Codex sidebar">
+  <div class="check"><input type="checkbox" id="strip" checked><span>Remove reasoning items<br><span class="note">Encrypted reasoning from one model can fail on another model.</span></span></div>
+  <div class="check"><input type="checkbox" id="openApp" checked><span>Open the fork in Codex</span></div>
+  <div style="margin-top:16px">
+    <div class="stat"><span>Items kept</span><b id="sKept">0</b></div>
+    <div class="stat"><span>Removed</span><b id="sDel">0</b></div>
+    <div class="stat"><span>Edited / added</span><b id="sEd">0</b></div>
+    <div class="stat"><span>Est. context tokens</span><b id="sTok">0</b></div>
+  </div>
+  <div id="warn" class="warn"></div>
+  <button class="primary" id="forkBtn" style="width:100%;margin-top:14px" disabled>Create forked thread</button>
+  <div class="note">The fork uses the same project folder as the source. The source thread does not change.</div>
+  <div id="result"></div>
+</aside>
+<section>
+  <div id="winBar">
+    <span class="note">Context window</span>
+    <select id="window"></select>
+    <button class="small" id="winPrev">◀ Earlier</button>
+    <button class="small" id="winNext">Later ▶</button>
+  </div>
+  <div class="filters">
+    <button class="chip on" data-f="context">Injected context</button>
+    <button class="chip on" data-f="tool">Tool calls</button>
+    <button class="chip" data-f="reasoning">Reasoning</button>
+    <button class="chip on" data-f="removed">Removed items</button>
+    <button class="small" id="collapseBtn">Collapse all</button>
+    <input id="search" placeholder="Search text…">
+  </div>
+  <div id="list"><div class="empty">Paste a thread link above and press Load.</div></div>
+</section>
+</main>
+<div id="toast"></div>
+<script>
+const $ = s => document.querySelector(s);
+const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+let S = { thread:null, items:[], cut:null, models:[], filters:{context:true, tool:true, reasoning:false, removed:true}, q:"", expanded:new Set(), editing:null, collapsed:false };
+let seq = 0;
+
+function toast(msg, ms=3500){ const t=$('#toast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none', ms); }
+
+// ---- item helpers (mirror ctxedit.py)
+const CTX_PREFIX = ["<environment_context","# AGENTS.md","<user_instructions","<permissions","<turn_aborted","<skills_instructions","<collaboration_mode","<codex_","<world_state","<user_shell_command","<subagent_notification","<multi_agent","<app-context","<personality","<model_switch","<external_codex_apps"];
+function itemText(it){
+  const t = it.type;
+  if (t==='message') return (it.content||[]).filter(c=>c && 'text' in c).map(c=>c.text).join('\n');
+  if (t==='function_call_output'||t==='custom_tool_call_output'){
+    let o = it.output;
+    if (typeof o==='string') return o;
+    if (o && !Array.isArray(o) && typeof o==='object') o = o.content ?? o.body ?? o;
+    if (Array.isArray(o)) return o.filter(c=>c && 'text' in c).map(c=>c.text).join('\n');
+    return JSON.stringify(o);
+  }
+  if (t==='function_call') return it.arguments||'';
+  if (t==='custom_tool_call') return it.input||'';
+  if (t==='reasoning') return (it.summary||[]).map(s=>s.text||'').join('\n');
+  return '';
+}
+function setText(it, txt){
+  const t = it.type;
+  if (t==='message'){
+    const kind = it.role==='assistant' ? 'output_text' : 'input_text';
+    const others = (it.content||[]).filter(c=>c && !('text' in c));
+    it.content = [{type:kind, text:txt}, ...others];
+  } else if (t==='function_call_output'||t==='custom_tool_call_output') it.output = txt;
+  else if (t==='function_call') it.arguments = txt;
+  else if (t==='custom_tool_call') it.input = txt;
+}
+const editable = it => ['message','function_call','function_call_output','custom_tool_call','custom_tool_call_output'].includes(it.type);
+function kindOf(it){
+  if (it.type==='message'){
+    if (it.role==='user'){ const tx=itemText(it).trimStart(); return CTX_PREFIX.some(p=>tx.startsWith(p)) ? 'context' : 'user'; }
+    if (it.role==='assistant') return 'assistant';
+    return 'developer';
+  }
+  if (it.type==='reasoning') return 'reasoning';
+  if (it.type==='compaction'||it.type==='compaction_summary') return 'compaction';
+  return 'tool';
+}
+function label(it){
+  const k = kindOf(it);
+  if (k==='user') return 'User';
+  if (k==='assistant') return it.phase==='commentary' ? 'Assistant · commentary' : 'Assistant';
+  if (k==='developer') return it.role==='system' ? 'System' : 'Developer';
+  if (k==='context') return 'Injected context';
+  if (k==='reasoning') return 'Reasoning';
+  if (k==='compaction') return 'Compaction summary (encrypted)';
+  if (it.type.endsWith('_output')) return 'Tool output';
+  return 'Tool call · ' + (it.name || it.type);
+}
+const badgeCls = k => ({user:'user',assistant:'assistant',developer:'developer',tool:'tool'}[k]||'');
+
+// ---- load
+async function api(path, opts){ const r = await fetch(path, opts); const j = await r.json(); if (!r.ok) throw new Error(j.error||r.statusText); return j; }
+async function loadModels(){
+  try { S.models = await api('/api/models'); } catch(e){ S.models = []; toast('Could not load models: '+e.message); }
+}
+function fillModels(current){
+  const m = $('#model'); m.innerHTML='';
+  const ids = S.models.map(x=>x.id);
+  if (current && !ids.includes(current)) S.models.unshift({id:current, name:current+' (source)', efforts:['low','medium','high','xhigh','max'], defaultEffort:'medium'});
+  for (const x of S.models){ const o=el('option',null,(x.name||x.id)+(x.id===current?'  · source':'')); o.value=x.id; m.append(o); }
+  m.value = current || (S.models.find(x=>x.isDefault)||S.models[0]||{}).id;
+  fillEfforts(S.thread && S.thread.effort);
+}
+function fillEfforts(pref){
+  const mm = S.models.find(x=>x.id===$('#model').value) || {efforts:[]};
+  const e = $('#effort'); e.innerHTML='';
+  for (const x of mm.efforts){ const o=el('option',null,x); o.value=x; e.append(o); }
+  e.value = mm.efforts.includes(pref) ? pref : (mm.defaultEffort || mm.efforts[0]);
+  updateWarn();
+}
+function fmtTs(ts){ if (!ts) return 'now'; const d = new Date(ts); return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
+function fillWindows(d){
+  const bar = $('#winBar'), sel = $('#window');
+  const ws = d.windows || [];
+  bar.style.display = ws.length > 1 ? 'flex' : 'none';
+  sel.innerHTML = '';
+  for (const w of [...ws].reverse()){
+    const tag = w.current ? 'Current context' : 'Before compaction ' + w.n;
+    const o = el('option', null, w.n + '. ' + tag + ' · ' + fmtTs(w.start_ts) + ' → ' + fmtTs(w.end_ts) + ' · ' + w.items + ' items · last msg: ' + (w.last || '—'));
+    o.value = w.n; sel.append(o);
+  }
+  sel.value = d.window;
+  $('#winPrev').disabled = d.window <= 1;
+  $('#winNext').disabled = d.window >= ws.length;
+}
+function changeWindow(n){
+  const dirty = S.items.some(r=>r.deleted || r.inserted || (r.orig && JSON.stringify(r.item)!==r.orig)) || S.cut;
+  if (dirty && !confirm('Switching the context window discards your edits. Continue?')) { $('#window').value = S.thread.window; return; }
+  load(n);
+}
+async function load(win){
+  const ref = $('#ref').value.trim(); if (!ref) return;
+  if (S.thread && ref.indexOf(S.thread.id) < 0 && win == null) win = null;
+  $('#loadBtn').disabled = true; $('#list').innerHTML = '<div class="empty">Loading…</div>';
+  try{
+    const q = '/api/thread?ref='+encodeURIComponent(ref) + (win ? '&window='+win : '');
+    const [d] = await Promise.all([api(q), S.models.length?null:loadModels()]);
+    S.thread = d; S.cut = null; S.expanded = new Set(); S.editing = null;
+    S.items = d.items.map(x=>({key:x.key, turn_id:x.turn_id, item:x.item, orig:JSON.stringify(x.item), deleted:false, inserted:false, fromCompaction:x.from_compaction}));
+    const info = $('#info'); info.innerHTML='';
+    info.append(el('div',null,d.title||'(untitled)')); info.firstChild.style.cssText='color:var(--fg);font-weight:600;font-size:13.5px';
+    info.append(el('div',null,d.id), el('div',null,d.cwd||''), el('div',null,'Source model: '+(d.model||'?')+' · '+(d.effort||'')));
+    const w = (d.windows||[]).find(x=>x.n===d.window);
+    if (w && !w.current){
+      info.append(el('div','winnote','Window '+w.n+' of '+d.windows.length+': the full context just before compaction '+w.n+' ('+fmtTs(w.end_ts)+'). Use "Fork here" to start the fork at an earlier point.'));
+    }
+    fillWindows(d);
+    $('#name').value = '✂️ ' + (d.title || 'Edited fork').slice(0,70);
+    fillModels(d.model);
+    $('#forkBtn').disabled = false; $('#result').innerHTML='';
+    history.replaceState(null,'','?thread='+d.id + (w && !w.current ? '&window='+w.n : ''));
+    render();
+  } catch(e){ $('#list').innerHTML=''; $('#list').append(el('div','empty','Error: '+e.message)); }
+  $('#loadBtn').disabled = false;
+}
+
+// ---- edits
+function pairKeys(row){
+  const cid = row.item.call_id; if (!cid) return [row];
+  return S.items.filter(r=>r.item.call_id===cid);
+}
+function toggleDelete(row){ const v=!row.deleted; for (const r of pairKeys(row)) r.deleted=v; render(); }
+function insertAfter(row, role){
+  const idx = S.items.indexOf(row);
+  const it = {type:'message', role, content:[{type: role==='assistant'?'output_text':'input_text', text:''}]};
+  const nr = {key:'n'+(++seq), turn_id: role==='user' ? 'new-'+seq : row.turn_id, item:it, orig:null, deleted:false, inserted:true};
+  S.items.splice(idx+1, 0, nr); S.editing = nr.key; render();
+  setTimeout(()=>{ const t=document.querySelector('[data-k="'+nr.key+'"] textarea'); t&&t.focus(); }, 30);
+}
+function isAfterCut(row){ if (!S.cut) return false; const ci=S.items.findIndex(r=>r.key===S.cut); return S.items.indexOf(row) > ci; }
+function finalItems(){ return S.items.filter(r=>!r.deleted && !isAfterCut(r)); }
+
+function updateStats(){
+  const fin = finalItems(); const strip = $('#strip').checked;
+  const counted = fin.filter(r=>!(strip && r.item.type==='reasoning'));
+  let chars = 0; for (const r of counted){ const it=r.item; chars += it.type==='reasoning' ? (it.encrypted_content||'').length*0.75 : (it.type==='compaction' ? (it.encrypted_content||'').length*0.75 : itemText(it).length); }
+  $('#sKept').textContent = counted.length;
+  $('#sDel').textContent = S.items.filter(r=>r.deleted || isAfterCut(r)).length;
+  $('#sEd').textContent = S.items.filter(r=>r.inserted || (r.orig && JSON.stringify(r.item)!==r.orig)).length;
+  $('#sTok').textContent = '~' + Math.round(chars/4).toLocaleString();
+  updateWarn();
+}
+function provider(m){ return (m||'').includes('/') ? m.split('/')[0] : 'openai'; }
+function updateWarn(){
+  const w = []; if (!S.thread) return;
+  const tgt = $('#model').value, src = S.thread.model;
+  const fin = finalItems();
+  if (provider(tgt)!==provider(src) && !$('#strip').checked && fin.some(r=>r.item.type==='reasoning')) w.push('The model provider changes. Keep "Remove reasoning items" on, or the first turn can fail.');
+  if (provider(tgt)!==provider(src) && fin.some(r=>r.item.type==='compaction')) w.push('The context has an encrypted compaction summary from '+src+'. Another provider may not read it. Remove it if the first turn fails.');
+  const last = fin[fin.length-1];
+  if (last && kindOf(last.item)==='user') w.push('The fork ends on a user message. Codex will answer it when you send your next message.');
+  $('#warn').textContent = w.join(' ');
+}
+
+// ---- render
+function visible(row){
+  const k = kindOf(row.item);
+  if (!S.filters.context && (k==='context'||k==='developer')) return false;
+  if (!S.filters.tool && k==='tool') return false;
+  if (!S.filters.reasoning && k==='reasoning') return false;
+  if (!S.filters.removed && (row.deleted || isAfterCut(row))) return false;
+  if (S.q && !itemText(row.item).toLowerCase().includes(S.q) && !label(row.item).toLowerCase().includes(S.q)) return false;
+  return true;
+}
+function render(){
+  const list = $('#list'); list.innerHTML='';
+  if (!S.thread){ list.append(el('div','empty','Paste a thread link above and press Load.')); return; }
+  let lastTurn = undefined, shown = 0;
+  const turnIndex = new Map(); let prevT = {}, n = 0;
+  for (const r of S.items){ if (r.turn_id !== prevT) { n++; prevT = r.turn_id; } turnIndex.set(r, n); }
+  for (const row of S.items){
+    if (!visible(row)) { if (S.cut===row.key) list.append(cutLine()); continue; }
+    if (row.turn_id !== lastTurn){
+      lastTurn = row.turn_id;
+      const t = el('div','turn','Turn '+turnIndex.get(row) + (row.fromCompaction?' · kept by compaction':'') + (row.inserted?' · new':''));
+      list.append(t);
+    }
+    list.append(card(row)); shown++;
+    if (S.cut===row.key) list.append(cutLine());
+  }
+  if (!shown) list.append(el('div','empty','No items match the filters.'));
+  updateStats();
+}
+function cutLine(){
+  const d = el('div','cutline'); d.append(el('span',null,'✂️ Fork point. The fork drops everything below this line.'));
+  const b = el('button','small','Remove fork point'); b.onclick=()=>{S.cut=null; render();}; d.append(b); return d;
+}
+function card(row){
+  const it = row.item, k = kindOf(it);
+  const c = el('div','card '+(k==='context'?'':k)); c.dataset.k = row.key;
+  if (row.deleted) c.classList.add('deleted');
+  if (isAfterCut(row)) c.classList.add('aftercut');
+  if (S.cut===row.key) c.classList.add('cut');
+  const top = el('div','top');
+  top.append(el('span','badge '+badgeCls(k), label(it)));
+  const txt = itemText(it);
+  if (k==='tool' && it.call_id) top.append(el('span','tag', it.call_id.slice(0,22)));
+  if (row.inserted) top.append(el('span','tag new','added'));
+  else if (row.orig && JSON.stringify(it)!==row.orig) top.append(el('span','tag edited','edited'));
+  if (k!=='reasoning' && k!=='compaction') top.append(el('span','tag', txt.length.toLocaleString()+' chars'));
+  const acts = el('div','actions');
+  const btn = (t, fn, cls) => { const b = el('button','small '+(cls||''), t); b.onclick = fn; acts.append(b); return b; };
+  if (editable(it)) btn('Edit', ()=>{ S.editing = S.editing===row.key?null:row.key; render(); });
+  btn('JSON', ()=>{ S.editing = S.editing===row.key+':json'?null:row.key+':json'; render(); });
+  if (row.orig && JSON.stringify(it)!==row.orig) btn('Revert', ()=>{ row.item = JSON.parse(row.orig); render(); });
+  btn('+ User', ()=>insertAfter(row,'user'));
+  btn('+ Assistant', ()=>insertAfter(row,'assistant'));
+  btn('+ Dev', ()=>insertAfter(row,'developer'));
+  btn('Fork here', ()=>{ S.cut = S.cut===row.key?null:row.key; render(); });
+  btn(row.deleted?'Restore':'Remove', ()=>toggleDelete(row), 'danger');
+  if (row.inserted) btn('Discard', ()=>{ S.items.splice(S.items.indexOf(row),1); render(); }, 'danger');
+  top.append(acts); c.append(top);
+
+  if (S.editing===row.key){
+    const ed = el('div','editor'); const ta = el('textarea'); ta.value = txt; ta.rows = Math.min(28, Math.max(4, txt.split('\n').length+1));
+    const r = el('div','row'); const save = el('button','small primary','Save'); const cancel = el('button','small','Cancel');
+    save.onclick = ()=>{ setText(row.item, ta.value); S.editing=null; render(); };
+    cancel.onclick = ()=>{ S.editing=null; if (row.inserted && !itemText(row.item)) S.items.splice(S.items.indexOf(row),1); render(); };
+    ta.onkeydown = e=>{ if ((e.metaKey||e.ctrlKey) && e.key==='Enter') save.click(); if (e.key==='Escape') cancel.click(); };
+    r.append(el('span','note','⌘↵ to save · Esc to cancel'), cancel, save); ed.append(ta, r); c.append(ed); return c;
+  }
+  if (S.editing===row.key+':json'){
+    const ed = el('div','editor'); const ta = el('textarea'); ta.value = JSON.stringify(it, null, 2); ta.rows = 18;
+    const r = el('div','row'); const save = el('button','small primary','Save JSON'); const cancel = el('button','small','Cancel');
+    save.onclick = ()=>{ try { row.item = JSON.parse(ta.value); S.editing=null; render(); } catch(e){ toast('Invalid JSON: '+e.message); } };
+    cancel.onclick = ()=>{ S.editing=null; render(); };
+    r.append(cancel, save); ed.append(ta, r); c.append(ed); return c;
+  }
+  if (S.collapsed && !S.expanded.has(row.key)) { const m = el('span','more', txt ? txt.slice(0,140).replace(/\s+/g,' ')+' …' : '(show)'); m.onclick=()=>{S.expanded.add(row.key); render();}; c.append(el('div')).append(m); return c; }
+  let body = txt;
+  if (k==='reasoning') body = (txt.trim() ? txt+'\n' : '') + '[encrypted reasoning, '+((it.encrypted_content||'').length).toLocaleString()+' bytes]';
+  if (k==='compaction') body = '[encrypted compaction summary, '+((it.encrypted_content||'').length).toLocaleString()+' bytes. This holds the summary of older turns.]';
+  const LIM = 1500;
+  const long = body.length > LIM && !S.expanded.has(row.key);
+  const b = el('div','body'+(k==='tool'||k==='context'||k==='developer'?' mono':''), long ? body.slice(0,LIM)+' …' : body);
+  c.append(b);
+  if (body.length > LIM){ const m = el('span','more', S.expanded.has(row.key)?'Show less':'Show all ('+body.length.toLocaleString()+' chars)'); m.onclick=()=>{ S.expanded.has(row.key)?S.expanded.delete(row.key):S.expanded.add(row.key); render(); }; c.append(m); }
+  return c;
+}
+
+// ---- fork
+async function fork(){
+  const fin = finalItems(); if (!fin.length) return toast('Nothing to fork.');
+  const empty = fin.find(r=>r.item.type==='message' && !itemText(r.item).trim() && !(r.item.content||[]).length);
+  if (empty) return toast('An added message is empty. Fill it in or discard it.');
+  $('#forkBtn').disabled = true; $('#forkBtn').textContent = 'Creating…';
+  try{
+    const res = await api('/api/fork', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+      source_id: S.thread.id, items: fin.map(r=>({turn_id:r.turn_id, item:r.item})),
+      model: $('#model').value, effort: $('#effort').value, name: $('#name').value,
+      strip_reasoning: $('#strip').checked, open: $('#openApp').checked })});
+    const box = el('div','result'); box.append(el('div',null,'✅ Fork created with '+res.item_count+' items in '+res.turns+' turns.'));
+    const a = el('a',null,res.link); a.href = res.link; box.append(a);
+    box.append(el('div','note','Send your next message in Codex to continue from this context.'));
+    const r = $('#result'); r.innerHTML=''; r.append(box);
+    toast('Fork created: '+res.id);
+  } catch(e){ toast('Fork failed: '+e.message, 7000); }
+  $('#forkBtn').disabled = false; $('#forkBtn').textContent = 'Create forked thread';
+}
+
+// ---- wire up
+$('#loadBtn').onclick = ()=>load();
+$('#ref').onkeydown = e=>{ if (e.key==='Enter') load(); };
+$('#window').onchange = e=>changeWindow(+e.target.value);
+$('#winPrev').onclick = ()=>changeWindow(S.thread.window-1);
+$('#winNext').onclick = ()=>changeWindow(S.thread.window+1);
+$('#model').onchange = ()=>fillEfforts($('#effort').value);
+$('#strip').onchange = updateStats;
+$('#forkBtn').onclick = fork;
+$('#collapseBtn').onclick = ()=>{ S.collapsed=!S.collapsed; S.expanded=new Set(); $('#collapseBtn').textContent = S.collapsed?'Expand all':'Collapse all'; render(); };
+document.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{ const f=ch.dataset.f; S.filters[f]=!S.filters[f]; ch.classList.toggle('on', S.filters[f]); render(); });
+let qT; $('#search').oninput = e=>{ clearTimeout(qT); qT=setTimeout(()=>{ S.q=e.target.value.toLowerCase().trim(); render(); },150); };
+const qs = new URLSearchParams(location.search), p = qs.get('thread');
+if (p){ $('#ref').value = p; load(+qs.get('window') || null); } else loadModels();
+</script>
+</body>
+</html>
