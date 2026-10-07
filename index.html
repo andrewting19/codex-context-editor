@@ -291,6 +291,7 @@ function itemText(it){
   if (t === 'function_call') return it.arguments || '';
   if (t === 'custom_tool_call') return it.input || '';
   if (t === 'reasoning') return (it.summary || []).map(s => s.text || '').join('\n');
+  if (isOcx(it)) return ocxDecode(it.encrypted_content);
   return '';
 }
 function setText(it, txt){
@@ -302,12 +303,19 @@ function setText(it, txt){
   } else if (/_output$/.test(t)) it.output = txt;
   else if (t === 'function_call') it.arguments = txt;
   else if (t === 'custom_tool_call') it.input = txt;
+  else if (isOcx(it)) it.encrypted_content = ocxEncode(txt);
 }
-const editable = it => it.type === 'message' || it.type === 'agent_message' || it.type === 'function_call' || it.type === 'custom_tool_call' || /_output$/.test(it.type || '');
+// OpenCodex stores the compaction summaries it writes as "ocx1:" + base64(plain text). These can be read and edited.
+// Summaries that start with "gAAAA" are encrypted by OpenAI and only OpenAI can read them.
+const OCX = 'ocx1:';
+const isOcx = it => /compaction/.test(it.type || '') && typeof it.encrypted_content === 'string' && it.encrypted_content.startsWith(OCX);
+function ocxDecode(s){ try { return new TextDecoder().decode(Uint8Array.from(atob(s.slice(OCX.length)), c => c.charCodeAt(0))); } catch (e) { return ''; } }
+function ocxEncode(txt){ const b = new TextEncoder().encode(txt); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return OCX + btoa(s); }
+const editable = it => isOcx(it) || it.type === 'message' || it.type === 'agent_message' || it.type === 'function_call' || it.type === 'custom_tool_call' || /_output$/.test(it.type || '');
 function images(it){ return (it.type === 'message' || it.type === 'agent_message' ? (it.content || []) : []).filter(c => c && /image/.test(c.type || '') && typeof c.image_url === 'string'); }
 function tokOf(it){
   let n = itemText(it).length / 4;
-  if (it.encrypted_content) n += it.encrypted_content.length * 0.75 / 4;
+  if (it.encrypted_content && !isOcx(it)) n += it.encrypted_content.length * 0.75 / 4;
   if (!editable(it) && !it.encrypted_content && it.type !== 'reasoning') n += JSON.stringify(it).length / 4;
   n += images(it).length * 800;
   if (it.type === 'agent_message') (it.content || []).forEach(c => { if (c && c.encrypted_content) n += c.encrypted_content.length * 0.75 / 4; });
@@ -584,7 +592,7 @@ function card(u){
   else if (k === 'context') ttl = h('span', {class:'ttl mono click', onclick:toggle}, ctxTitle(txt));
   else if (k === 'developer') ttl = h('span', {class:'ttl click', onclick:toggle}, open ? 'Developer instructions' : txt.replace(/\s+/g, ' ').slice(0, 200));
   else if (k === 'reasoning') ttl = h('span', {class:'ttl click', onclick:toggle}, txt ? txt.replace(/\s+/g, ' ').slice(0, 200) : 'Encrypted reasoning');
-  else if (k === 'compaction') ttl = h('span', {class:'ttl click', onclick:toggle}, 'Encrypted summary of the older turns');
+  else if (k === 'compaction') ttl = h('span', {class:'ttl click', onclick:toggle}, isOcx(it) ? 'Summary of the older turns: ' + txt.replace(/^#.*\n/, '').replace(/\s+/g, ' ').slice(0, 160) : 'Encrypted summary of the older turns');
   else if (k === 'agentmsg') ttl = h('span', {class:'ttl mono'}, (it.author || '?') + ' → ' + (it.recipient || '?'));
   else ttl = h('span', {class:'ttl'});
 
@@ -611,7 +619,7 @@ function card(u){
   else ib(r.deleted ? '↩ Restore' : '✕ Remove', r.deleted ? 'Put this item back (x)' : 'Remove this item from the fork (x)', () => setDeleted([key], !r.deleted), r.deleted ? '' : 'danger');
 
   const tg = collapsible && !editingHere;
-  const hd = h('div', {class:'chd' + (tg ? ' tog' : ''), title:tg ? (open ? 'Click to hide' : 'Click to show') : null},
+  const hd = h('div', {class:'chd' + (tg ? ' tog' : ''), },
     h('span', {class:'selbox', title:'Select (shift-click for a range)', onclick:e => { e.stopPropagation(); toggleSel(key, e.shiftKey); }}, S.sel.has(key) ? '✓' : ''),
     collapsible ? h('span', {class:'caret'}, open ? '▾' : '▸') : null,
     h('span', {class:'who'}, who(r, k)), ttl, tags, h('span', {class:'sz ' + szc(tok), title:'Estimated tokens'}, fmtTok(tok)), acts);
@@ -626,6 +634,7 @@ function card(u){
     if (im.length) c.append(h('div', {class:'imgs'}, im.map(x => /^(data:image\/|https?:)/.test(x.image_url) ? h('img', {src:x.image_url, loading:'lazy'}) : h('span', {class:'tag'}, 'image'))));
   } else if (k === 'context' || k === 'toolout') add(c, longText(txt, key, 4000, false));
   else if (k === 'reasoning') c.append(h('div', {class:'body muted'}, (txt ? txt + '\n' : '') + '[encrypted reasoning, ' + ((it.encrypted_content || '').length).toLocaleString() + ' bytes. You can remove it, but you cannot edit it.]'));
+  else if (k === 'compaction' && isOcx(it)) add(c, longText(txt, key, 5000, true));
   else if (k === 'compaction') c.append(h('div', {class:'body muted'}, 'Codex wrote this encrypted summary when it compacted the thread. It holds the older turns (' + ((it.encrypted_content || '').length).toLocaleString() + ' bytes). You can remove it, but you cannot edit it.'));
   else if (k === 'tool'){
     const sec = (title, row) => {
@@ -748,7 +757,7 @@ function renderPanel(){
   document.querySelectorAll('.ptabs button').forEach(b => b.classList.toggle('on', b.dataset.t === S.ptab));
   const pl = $('#plist'); pl.textContent = '';
   const label = r => { const k = kindOf(r), t = itemText(r.item);
-    return k === 'tool' ? toolName(r.item) + ' ' + toolSummary(r.item) : k === 'context' ? ctxTitle(t) : k === 'reasoning' && !t ? 'encrypted' : k === 'compaction' ? 'encrypted summary' : (t || who(r, k)).replace(/\s+/g, ' ').slice(0, 120); };
+    return k === 'tool' ? toolName(r.item) + ' ' + toolSummary(r.item) : k === 'context' ? ctxTitle(t) : k === 'reasoning' && !t ? 'encrypted' : k === 'compaction' && !isOcx(r.item) ? 'encrypted summary' : (t || who(r, k)).replace(/\s+/g, ' ').slice(0, 120); };
   if (S.ptab === 'changes'){
     const items = [];
     if (S.cut != null) items.push(h('div', {class:'pitem', onclick:() => jumpTo(S.cut)}, h('span', {class:'w cut'}, 'Fork point'),
@@ -780,7 +789,7 @@ function updateWarn(fin){
   const w = [], tgt = $('#model').value, src = S.thread.model;
   if (provider(tgt) !== provider(src) && !$('#strip').checked && fin.some(r => r.item.type === 'reasoning'))
     w.push('The model provider changes. Keep "Remove reasoning items" on, or the first turn can fail.');
-  if (provider(tgt) !== provider(src) && fin.some(r => /compaction/.test(r.item.type || '')))
+  if (provider(tgt) !== provider(src) && fin.some(r => /compaction/.test(r.item.type || '') && !isOcx(r.item)))
     w.push('The context has an encrypted compaction summary from ' + src + '. Another provider may not read it. Remove it if the first turn fails.');
   const last = fin[fin.length - 1];
   if (last && kindOf(last) === 'user') w.push('The fork ends on a user message. Codex answers it when you send your next message.');

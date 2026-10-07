@@ -5,6 +5,7 @@ and writes an edited copy as a new thread that the Codex app can open.
 """
 from __future__ import annotations
 
+import base64
 import copy
 import glob
 import json
@@ -189,6 +190,13 @@ def item_text(item: dict) -> str:
         return item.get("input", "")
     if t == "reasoning":
         return "\n".join(s.get("text", "") for s in item.get("summary") or [] if isinstance(s, dict))
+    ec = item.get("encrypted_content")
+    if t and "compaction" in t and isinstance(ec, str) and ec.startswith("ocx1:"):
+        # OpenCodex writes its summaries as "ocx1:" + base64(plain text).
+        try:
+            return base64.b64decode(ec[5:]).decode("utf-8", "replace")
+        except ValueError:
+            return ""
     return ""
 
 
