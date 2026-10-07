@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime, timezone
 
 CODEX_HOME = os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")
-THREAD_ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+THREAD_ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 
 
 # ---------------------------------------------------------------- helpers
@@ -37,7 +37,7 @@ def parse_thread_id(text: str) -> str:
     m = THREAD_ID_RE.findall(text or "")
     if not m:
         raise ValueError("No thread id found. Paste a codex://threads/<id> link or a thread id.")
-    return m[-1]
+    return m[-1].lower()
 
 
 def state_db() -> str | None:
@@ -59,6 +59,49 @@ def db_thread_row(tid: str) -> dict | None:
         return dict(r) if r else None
     finally:
         con.close()
+
+
+def list_threads(query: str = "", limit: int = 60) -> list[dict]:
+    """Recent threads for the start page. Uses only columns that exist in this Codex version."""
+    db = state_db()
+    if not db:
+        return []
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
+    con.row_factory = sqlite3.Row
+    try:
+        cols = {r[1] for r in con.execute("pragma table_info(threads)")}
+        want = [c for c in ("id", "name", "title", "first_user_message", "preview", "cwd", "model", "updated_at",
+                            "updated_at_ms", "archived", "agent_role", "agent_nickname", "source") if c in cols]
+        where, args = [], []
+        if "archived" in cols:
+            where.append("archived = 0")
+        if "agent_role" in cols:  # hide subagent threads
+            where.append("(agent_role is null or agent_role = '')")
+        q = (query or "").strip()
+        if q:
+            m = THREAD_ID_RE.search(q)
+            if m:
+                where, args = ["id = ?"], [m.group(0).lower()]
+            else:
+                text_cols = [c for c in ("name", "title", "first_user_message", "cwd") if c in cols]
+                where.append("(" + " or ".join(f"{c} like ?" for c in text_cols) + ")")
+                args += [f"%{q}%"] * len(text_cols)
+        order = "updated_at_ms" if "updated_at_ms" in cols else "updated_at"
+        sql = f"select {', '.join(want)} from threads"
+        if where:
+            sql += " where " + " and ".join(where)
+        sql += f" order by {order} desc limit ?"
+        rows = con.execute(sql, args + [int(limit)]).fetchall()
+    finally:
+        con.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        first = " ".join((d.get("first_user_message") or d.get("preview") or "").split())[:160]
+        ts = d.get("updated_at_ms") or ((d.get("updated_at") or 0) * 1000)
+        out.append({"id": d["id"], "title": d.get("name") or d.get("title") or first[:80] or "(untitled)",
+                    "first": first, "cwd": d.get("cwd") or "", "model": d.get("model") or "", "updated_ms": ts})
+    return out
 
 
 def find_rollout(tid: str) -> str:

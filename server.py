@@ -168,6 +168,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(get_info)
         if u.path == "/api/models":
             return self._guard(get_models)
+        if u.path == "/api/threads":
+            return self._guard(lambda: ctxedit.list_threads(q.get("q", [""])[0]))
         if u.path == "/api/thread":
             w = q.get("window", [""])[0]
             return self._guard(lambda: ctxedit.load_thread(q.get("ref", [""])[0], int(w) if w.isdigit() else None))
