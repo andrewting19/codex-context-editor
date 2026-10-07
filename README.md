@@ -38,16 +38,26 @@ Then open http://127.0.0.1:7317 on your computer. The fork is written on the rem
 
 ## Use
 
-1. Paste a thread link, such as `codex://threads/01a10d09-...`, or a thread id, and press **Load**.
-2. Edit the context:
-   - **Context window**: if the thread was compacted, select an earlier window. Window N is the
-     full context just before compaction N.
-   - **Fork here**: cut the context below this item.
-   - **Remove / Restore**: remove an item. A tool call and its output are removed together.
-   - **Edit**: change the text of a message, tool call, or tool output. **JSON** edits the raw item.
-   - **+ User / + Assistant / + Dev**: add a new message below an item.
-   - Use the filter buttons and the search box to find items.
-3. Select the model and reasoning effort, set a name, and press **Create forked thread**.
+1. Pick a thread from the list of recent threads, or paste a thread link such as
+   `codex://threads/01a10d09-...` (or a thread id) and press **Load**.
+2. Edit the context. Each item shows its estimated size in tokens. Large items are orange or red.
+   - **Context windows** (left column): if the thread was compacted, select an earlier window.
+     "Before compaction N" is the full context just before compaction N.
+   - **Turns** (left column): click a turn to go to it.
+   - On an item: **✎** edits the text, **{ }** edits the raw JSON, **✂** sets the fork point
+     (the fork drops everything below it), and **✕** removes the item. A tool call and its output
+     are one card and are removed together.
+   - Point between two items to add a user, assistant, or developer message there.
+   - On a turn heading: **Remove turn** and **Fork after this turn**.
+   - Click the box at the left of an item to select it. Shift-click to select a range, then remove
+     or restore all of them.
+   - **Undo** and **Redo** work for all changes. Your edits are kept as a draft in the browser, so a
+     reload does not lose them.
+3. In the right column, select the model and reasoning effort and press **Create forked thread**.
+   **Changes** lists your edits. **Largest items** shows what uses the most context.
+
+Press **?** in the editor to see the keyboard shortcuts (`j`/`k` to move, `x` to remove,
+`e` to edit, `f` to set the fork point, `a` to add a message, ⌘Z to undo).
 
 ## How it works
 

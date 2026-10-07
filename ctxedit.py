@@ -71,12 +71,17 @@ def list_threads(query: str = "", limit: int = 60) -> list[dict]:
     try:
         cols = {r[1] for r in con.execute("pragma table_info(threads)")}
         want = [c for c in ("id", "name", "title", "first_user_message", "preview", "cwd", "model", "updated_at",
-                            "updated_at_ms", "archived", "agent_role", "agent_nickname", "source") if c in cols]
+                            "updated_at_ms", "recency_at_ms") if c in cols]
         where, args = [], []
         if "archived" in cols:
             where.append("archived = 0")
-        if "agent_role" in cols:  # hide subagent threads
+        # Hide subagent and review threads. They can still be loaded by id.
+        if "agent_role" in cols:
             where.append("(agent_role is null or agent_role = '')")
+        if "thread_source" in cols:
+            where.append("coalesce(thread_source, '') not in ('subagent', 'guardian_review')")
+        if "source" in cols:
+            where.append("coalesce(source, '') not like '{%subagent%'")
         q = (query or "").strip()
         if q:
             m = THREAD_ID_RE.search(q)
@@ -86,7 +91,8 @@ def list_threads(query: str = "", limit: int = 60) -> list[dict]:
                 text_cols = [c for c in ("name", "title", "first_user_message", "cwd") if c in cols]
                 where.append("(" + " or ".join(f"{c} like ?" for c in text_cols) + ")")
                 args += [f"%{q}%"] * len(text_cols)
-        order = "updated_at_ms" if "updated_at_ms" in cols else "updated_at"
+        # recency_at_ms is the last real activity. updated_at changes for many reasons.
+        order = next(c for c in ("recency_at_ms", "updated_at_ms", "updated_at") if c in cols)
         sql = f"select {', '.join(want)} from threads"
         if where:
             sql += " where " + " and ".join(where)
@@ -98,7 +104,7 @@ def list_threads(query: str = "", limit: int = 60) -> list[dict]:
     for r in rows:
         d = dict(r)
         first = " ".join((d.get("first_user_message") or d.get("preview") or "").split())[:160]
-        ts = d.get("updated_at_ms") or ((d.get("updated_at") or 0) * 1000)
+        ts = d.get("recency_at_ms") or d.get("updated_at_ms") or ((d.get("updated_at") or 0) * 1000)
         out.append({"id": d["id"], "title": d.get("name") or d.get("title") or first[:80] or "(untitled)",
                     "first": first, "cwd": d.get("cwd") or "", "model": d.get("model") or "", "updated_ms": ts})
     return out
@@ -166,7 +172,7 @@ def _load_path(path: str, end: int | None, depth: int) -> list[dict]:
 
 def item_text(item: dict) -> str:
     t = item.get("type")
-    if t == "message":
+    if t in ("message", "agent_message"):
         return "\n".join(c.get("text", "") for c in item.get("content") or [] if isinstance(c, dict) and "text" in c)
     if t in ("function_call_output", "custom_tool_call_output"):
         o = item.get("output")
