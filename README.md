@@ -67,6 +67,10 @@ Press **?** in the editor to see the keyboard shortcuts (`j`/`k` to move, `x` to
 - A fork is a new rollout file with the edited items, plus the user and assistant events that
   the Codex app shows as a transcript. It has the same working folder as the source, so it shows
   in the same project.
+- The fork also gets the source's record of which context Codex already injected (AGENTS.md,
+  skills, environment, and so on) as it was at the fork point. Without it, Codex injects all of
+  that context again on the next turn. If you remove one of these items, the editor leaves it out
+  of the record, so Codex injects it again once.
 - The editor starts a private `codex app-server` process to get the model list and to make Codex
   index the new thread.
 - The server listens on 127.0.0.1 only and accepts requests only for local host names.
@@ -95,4 +99,3 @@ real model turn on the fork (this uses your Codex quota), checks the reply, and 
 ## License
 
 MIT
-

@@ -349,6 +349,68 @@ def _fix_tool_pairs(items: list[dict]) -> list[dict]:
     return keep
 
 
+# Codex records which context it has injected (AGENTS.md, skills, environment, and so on) in
+# "world_state" rollout lines. A line with full=true replaces the state; other lines patch it. On the
+# next turn Codex compares its live context with this state and injects only what changed. A fork
+# without this state makes Codex inject all of the context again, next to the copy already in it.
+WORLD_STATE_MARKERS = {
+    "agents_md": "# AGENTS.md instructions",
+    "host_skills": "<skills_instructions>",
+    "environments": "<environment_context>",
+    "permissions": "<permissions instructions>",
+    "collaboration_mode": "<collaboration_mode>",
+    "multi_agent_mode": "<multi_agent_mode>",
+}
+
+
+def _merge(base: dict, patch: dict) -> dict:
+    for k, v in patch.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            _merge(base[k], v)
+        else:
+            base[k] = copy.deepcopy(v)
+    return base
+
+
+def world_state_at(lines: list[dict], turn_ids: set) -> dict | None:
+    """The world state that was in effect at the end of the last kept turn, or None if unknown."""
+    start = max((i for i, l in enumerate(lines)
+                 if l.get("type") in ("turn_context", "event_msg") and isinstance(l.get("payload"), dict)
+                 and l["payload"].get("turn_id") in turn_ids), default=None)
+    if start is None:
+        return None
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        l, p = lines[i], lines[i].get("payload")
+        if l.get("type") == "compacted" or (l.get("type") == "event_msg" and isinstance(p, dict)
+                                             and p.get("type") == "task_started" and p.get("turn_id") not in turn_ids):
+            end = i
+            break
+    state = None
+    for l in lines[:end]:
+        p = l.get("payload")
+        if l.get("type") != "world_state" or not isinstance(p, dict) or not isinstance(p.get("state"), dict):
+            continue
+        if p.get("full") or state is None:
+            state = copy.deepcopy(p["state"])
+        else:
+            _merge(state, p["state"])
+    return state
+
+
+def _fork_world_state(lines: list[dict], items: list[dict]) -> dict | None:
+    state = world_state_at(lines, {h.get("turn_id") for h in items if h.get("turn_id")})
+    if state is None:
+        return None
+    # If the edited context no longer holds a part, drop that part so Codex injects it again.
+    ctx = "\n".join(item_text(h["item"]) for h in items
+                     if h["item"].get("type") == "message" and h["item"].get("role") in ("user", "developer"))
+    for key, marker in WORLD_STATE_MARKERS.items():
+        if key in state and marker not in ctx:
+            state.pop(key)
+    return state
+
+
 def write_fork(source_id: str, items: list[dict], model: str | None, effort: str | None,
                strip_reasoning: bool = True) -> dict:
     """Write a new rollout file with the edited items. Returns {id, path}."""
@@ -361,6 +423,7 @@ def write_fork(source_id: str, items: list[dict], model: str | None, effort: str
     if strip_reasoning:
         items = _strip_reasoning(items)
     items = _fix_tool_pairs(items)
+    world = _fork_world_state(lines, items)
 
     new_id = uuid7()
     now = datetime.now()
@@ -399,10 +462,17 @@ def write_fork(source_id: str, items: list[dict], model: str | None, effort: str
         groups[-1].append(h)
 
     started = int(time.time())
-    for g in groups:
+    for n, g in enumerate(groups):
         turn_id = uuid7()
         emit("event_msg", {"type": "task_started", "turn_id": turn_id, "root_turn_id": turn_id, "started_at": started,
                            "model_context_window": None, "collaboration_mode_kind": "default"})
+        if world is not None and n == len(groups) - 1:
+            state = copy.deepcopy(world)
+            if model:
+                state["model"] = model
+                if isinstance(state.get("collaboration_mode"), dict):
+                    state["collaboration_mode"]["model"] = model
+            emit("world_state", {"full": True, "state": state})
         if last_tc:
             tc = copy.deepcopy(last_tc)
             tc["turn_id"] = turn_id
