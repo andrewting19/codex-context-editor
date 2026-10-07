@@ -24,6 +24,8 @@ button.sm,.abtn.sm{padding:3px 9px;font-size:12px;border-radius:6px}
 button.icon{padding:1px 7px;font-size:13px;border-radius:6px;background:transparent;border-color:transparent;color:var(--mute);line-height:1.5;min-width:28px}
 button.icon:hover{background:var(--card2);border-color:var(--line2);color:var(--fg)}
 button.icon.danger:hover{color:var(--bad);border-color:var(--bad)}
+button.icon.lbl{font-size:11.5px;padding:1px 6px;white-space:nowrap}
+#tip{position:fixed;z-index:60;pointer-events:none;background:var(--fg);color:var(--bg);font-size:12px;line-height:1.35;padding:4px 8px;border-radius:6px;max-width:280px;display:none;box-shadow:var(--shadow)}
 kbd{font:11px ui-monospace,Menlo,monospace;border:1px solid var(--line2);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--fg);background:var(--card)}
 .muted{color:var(--mute)}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
@@ -90,8 +92,11 @@ main.home #outline,main.home #panel,main.home #bar{display:none}
 .ttl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--mute);font-size:12.5px}
 .ttl.mono{font-size:12px}.ttl b{color:var(--fg);font-weight:600}
 .ttl.click{cursor:pointer}.ttl.click:hover{color:var(--fg)}
-.cact{display:flex;gap:1px;opacity:0}
-.card:hover .cact,.card.focus .cact{opacity:1}
+.chd.tog{cursor:pointer}.chd.tog:hover .ttl{color:var(--fg)}
+.caret{width:10px;font-size:10px;color:var(--mute);flex:none}
+.cact{display:flex;gap:1px;position:absolute;right:6px;top:5px;padding-left:18px;background:linear-gradient(to right,transparent,var(--card) 18px);opacity:0;pointer-events:none}
+.card:hover .cact,.card.focus .cact{opacity:1;pointer-events:auto}
+.card.sel .cact{background:linear-gradient(to right,transparent,color-mix(in srgb,var(--acc) 9%,var(--card)) 18px)}
 .selbox{width:15px;height:15px;border:1.5px solid var(--line2);border-radius:4px;flex:none;cursor:pointer;display:grid;place-items:center;font-size:10px;color:#fff;opacity:0;margin-left:-4px}
 .card:hover .selbox,.card.sel .selbox,.selecting .selbox{opacity:1}
 .card.sel .selbox{background:var(--acc);border-color:var(--acc)}
@@ -139,7 +144,15 @@ main.home #outline,main.home #panel,main.home #bar{display:none}
 .check input{margin-top:3px}
 .meter{height:8px;border-radius:99px;background:var(--card2);overflow:hidden;margin:6px 0 4px;display:flex}
 .meter i{display:block;height:100%;background:var(--acc);transition:width .2s}
-.meter i.rm{background:var(--bad);opacity:.4}
+.meter i.rm{background:var(--bad);opacity:.45}
+.meter i.rs{background:var(--mute);opacity:.35}
+.ctxhead{display:flex;align-items:baseline;gap:6px;margin-top:2px}
+.ctxhead b{font-size:22px;font-variant-numeric:tabular-nums}
+.ctxhead span{font-size:12px;color:var(--mute)}
+.brk{font-size:12px;margin-top:6px;display:grid;grid-template-columns:10px 1fr auto;gap:3px 7px;align-items:center}
+.brk .k{width:8px;height:8px;border-radius:2px}
+.brk .v{font-variant-numeric:tabular-nums;text-align:right}
+.brk .tot{border-top:1px solid var(--line);padding-top:4px;font-weight:600}
 .stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
 .stat{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px 9px}
 .stat div{font-size:11px;color:var(--mute)}
@@ -194,14 +207,13 @@ main.home #outline,main.home #panel,main.home #bar{display:none}
     <label class="pl" for="name">Name</label><input type="text" id="name" placeholder="Name in the Codex sidebar">
     <label class="check"><input type="checkbox" id="strip" checked><span>Remove reasoning items<br><span class="muted" style="font-size:12px">Encrypted reasoning from one model can fail on another model.</span></span></label>
     <label class="check" id="openRow"><input type="checkbox" id="openApp" checked><span>Open the fork in Codex</span></label>
-    <label class="pl">Context size</label>
-    <div class="meter"><i id="mKeep"></i><i id="mRm" class="rm"></i></div>
-    <div class="muted" style="font-size:12px" id="mText"></div>
+    <label class="pl">Fork context size</label>
+    <div class="ctxhead"><b id="mTot">0</b><span id="mSub">tokens (estimate)</span></div>
+    <div class="meter"><i id="mKeep"></i><i id="mRm" class="rm"></i><i id="mRs" class="rs"></i></div>
+    <div class="brk" id="mBrk"></div>
     <div class="stats">
       <div class="stat"><div>Items kept</div><b id="sKept">0</b></div>
       <div class="stat"><div>Turns kept</div><b id="sTurns">0</b></div>
-      <div class="stat"><div>Removed</div><b id="sDel">0</b></div>
-      <div class="stat"><div>Edited / added</div><b id="sEd">0</b></div>
     </div>
     <div id="warn" class="warn"></div>
     <button class="primary" id="forkBtn" disabled>Create forked thread</button>
@@ -212,6 +224,7 @@ main.home #outline,main.home #panel,main.home #bar{display:none}
   </aside>
 </main>
 <div id="toast"></div>
+<div id="tip"></div>
 <div class="modal" id="help"><div class="box">
   <b style="font-size:15px">Keyboard shortcuts</b>
   <div class="keys">
@@ -241,8 +254,8 @@ function h(tag, a){
 }
 function add(e, k){ if (k == null || k === false) return; if (Array.isArray(k)) return k.forEach(x => add(e, x)); e.append(k.nodeType ? k : document.createTextNode(String(k))); }
 
-const S = { thread:null, rows:[], cut:null, models:[], info:{}, filters:{context:true, tool:true, reasoning:false, removed:true},
-  q:'', sel:new Set(), anchor:null, focus:null, editing:null, open:new Set(), full:new Set(), toolsOpen:false,
+const S = { thread:null, rows:[], cut:null, models:[], info:{}, filters:{context:true, tool:true, reasoning:true, removed:true},
+  q:'', sel:new Set(), anchor:null, focus:null, editing:null, open:new Set(), shut:new Set(), full:new Set(), toolsOpen:false,
   undo:[], redo:[], ptab:'changes', turns:[], units:[], order:[], banner:null, seq:0 };
 
 // ---------- small helpers
@@ -550,21 +563,26 @@ function editor(r, json){
     h('button', {class:'sm', onclick:cancel}, 'Cancel'), h('button', {class:'sm primary', onclick:save}, json ? 'Save JSON' : 'Save')));
 }
 const isEditing = (r, json) => S.editing && S.editing.key === r.key && (json == null || !!S.editing.json === json);
+const isOpen = u => S.open.has(u.key) || (kindOf(u.row) === 'tool' && S.toolsOpen && !S.shut.has(u.key));
+function toggleOpen(u){
+  if (isOpen(u)){ S.open.delete(u.key); S.shut.add(u.key); } else { S.shut.delete(u.key); S.open.add(u.key); }
+  render();
+}
 function card(u){
   const r = u.row, it = r.item, k = kindOf(r), key = u.key;
   const collapsible = k === 'context' || k === 'tool' || k === 'toolout' || k === 'reasoning' || k === 'compaction' || k === 'developer';
   const editingHere = S.editing && u.keys.includes(S.editing.key);
-  const open = !collapsible || editingHere || S.open.has(key) || (k === 'tool' && S.toolsOpen);
+  const open = !collapsible || editingHere || isOpen(u);
   const c = h('div', {class:'card ' + k + (r.deleted ? ' del' : '') + (afterCut(r) ? ' after' : '') + (S.sel.has(key) ? ' sel' : '') + (S.focus === key ? ' focus' : ''), 'data-k':key});
   c.onclick = e => { if (!e.target.closest('button,textarea,a,.selbox,.more')) setFocus(key, false); };
-  const toggle = () => { S.open.has(key) ? S.open.delete(key) : S.open.add(key); render(); };
+  const toggle = null;
 
   let ttl = null;
   const txt = itemText(it);
   if (k === 'tool') ttl = h('span', {class:'ttl mono click', onclick:toggle, title:'Show or hide'}, h('b', null, toolName(it)), '  ' + toolSummary(it));
   else if (k === 'toolout') ttl = h('span', {class:'ttl mono click', onclick:toggle}, txt.replace(/\s+/g, ' ').slice(0, 200));
   else if (k === 'context') ttl = h('span', {class:'ttl mono click', onclick:toggle}, ctxTitle(txt));
-  else if (k === 'developer') ttl = h('span', {class:'ttl click', onclick:toggle}, open ? '' : txt.replace(/\s+/g, ' ').slice(0, 200));
+  else if (k === 'developer') ttl = h('span', {class:'ttl click', onclick:toggle}, open ? 'Developer instructions' : txt.replace(/\s+/g, ' ').slice(0, 200));
   else if (k === 'reasoning') ttl = h('span', {class:'ttl click', onclick:toggle}, txt ? txt.replace(/\s+/g, ' ').slice(0, 200) : 'Encrypted reasoning');
   else if (k === 'compaction') ttl = h('span', {class:'ttl click', onclick:toggle}, 'Encrypted summary of the older turns');
   else if (k === 'agentmsg') ttl = h('span', {class:'ttl mono'}, (it.author || '?') + ' → ' + (it.recipient || '?'));
@@ -574,21 +592,31 @@ function card(u){
   const anyEdited = u.keys.some(x => { const rr = S.rows[S.idx.get(x)]; return rr && rr.edited; });
   if (r.inserted) tags.push(h('span', {class:'tag new'}, 'added'));
   else if (anyEdited) tags.push(h('span', {class:'tag edited'}, 'edited'));
+  if (k === 'reasoning' && !gone(r) && $('#strip').checked) tags.push(h('span', {class:'tag', title:'"Remove reasoning items" is on, so the fork leaves this out. Turn it off to keep reasoning.'}, 'not in fork'));
   if (k === 'tool' && it.call_id && !u.out) tags.push(h('span', {class:'tag bad', title:'A tool call without an output is dropped from the fork'}, 'no output'));
   const tok = unitTok(u);
 
   const acts = h('span', {class:'cact'});
-  const ib = (label, title, fn, cls) => acts.append(h('button', {class:'icon ' + (cls || ''), title:title, 'aria-label':title, onclick:fn}, label));
-  if (editable(it) && k !== 'tool') ib('✎', 'Edit text (e)', () => startEdit(r.key, false));
-  if (k !== 'tool') ib('{ }', 'Edit JSON', () => startEdit(r.key, true));
-  if (r.edited) ib('↺', 'Revert edit', () => revert(r));
-  ib('✂', S.cut === u.last ? 'Remove fork point' : 'Fork here: drop everything below (f)', () => setCut(u.last));
-  if (r.inserted) ib('🗑', 'Discard this message', () => mutate(() => { S.rows.splice(S.rows.indexOf(r), 1); }), 'danger');
-  else ib(r.deleted ? '↩' : '✕', r.deleted ? 'Restore (x)' : 'Remove (x)', () => setDeleted([key], !r.deleted), r.deleted ? '' : 'danger');
+  const ib = (label, title, fn, cls) => acts.append(h('button', {class:'icon lbl ' + (cls || ''), title:title, 'aria-label':title, onclick:fn}, label));
+  if (k === 'tool'){
+    ib('✎ Edit input', 'Edit the tool call arguments', () => startEdit(r.key, !editable(it)));
+    if (u.out) ib('✎ Edit output', 'Edit what the tool returned to the model', () => startEdit(u.out.key, !editable(u.out.item)));
+  } else {
+    if (editable(it)) ib('✎ Edit', 'Edit the text (e)', () => startEdit(r.key, false));
+    ib('{ } JSON', 'Edit the raw JSON of this item', () => startEdit(r.key, true));
+  }
+  if (anyEdited) ib('↺ Revert', 'Undo your edits to this item', () => u.keys.forEach(x => { const rr = S.rows[S.idx.get(x)]; if (rr.edited) revert(rr); }));
+  ib(S.cut === u.last ? '✂ Unset fork point' : '✂ Fork here', S.cut === u.last ? 'Remove the fork point' : 'Fork after this item. Everything below is dropped (f)', () => setCut(u.last));
+  if (r.inserted) ib('🗑 Discard', 'Delete this new message', () => mutate(() => { S.rows.splice(S.rows.indexOf(r), 1); }), 'danger');
+  else ib(r.deleted ? '↩ Restore' : '✕ Remove', r.deleted ? 'Put this item back (x)' : 'Remove this item from the fork (x)', () => setDeleted([key], !r.deleted), r.deleted ? '' : 'danger');
 
-  c.append(h('div', {class:'chd'},
+  const tg = collapsible && !editingHere;
+  const hd = h('div', {class:'chd' + (tg ? ' tog' : ''), title:tg ? (open ? 'Click to hide' : 'Click to show') : null},
     h('span', {class:'selbox', title:'Select (shift-click for a range)', onclick:e => { e.stopPropagation(); toggleSel(key, e.shiftKey); }}, S.sel.has(key) ? '✓' : ''),
-    h('span', {class:'who'}, who(r, k)), ttl, tags, h('span', {class:'sz ' + szc(tok), title:'Estimated tokens'}, fmtTok(tok)), acts));
+    collapsible ? h('span', {class:'caret'}, open ? '▾' : '▸') : null,
+    h('span', {class:'who'}, who(r, k)), ttl, tags, h('span', {class:'sz ' + szc(tok), title:'Estimated tokens'}, fmtTok(tok)), acts);
+  if (tg) hd.addEventListener('click', e => { if (!e.target.closest('button,.selbox,.cact')) toggleOpen(u); });
+  c.append(hd);
 
   if (isEditing(r)) { c.append(editor(r, !!S.editing.json)); return c; }
   if (!open) return c;
@@ -676,20 +704,45 @@ function spy(){
 // ---------- side panel
 function renderPanel(){
   const fin = finalRows(), strip = $('#strip').checked;
-  const counted = fin.filter(r => !(strip && r.item.type === 'reasoning'));
-  const keptTok = counted.reduce((a, r) => a + r.tok, 0);
-  const origTok = S.rows.filter(r => !r.inserted).reduce((a, r) => a + r.tok0, 0) || 1;
-  const keptOrig = counted.filter(r => !r.inserted).reduce((a, r) => a + r.tok0, 0);
-  const total = Math.max(origTok, keptTok);
-  $('#mKeep').style.width = (100 * keptTok / total) + '%';
-  $('#mRm').style.width = (100 * Math.max(0, origTok - keptOrig) / total) + '%';
-  const rsTok = strip ? fin.filter(r => r.item.type === 'reasoning').reduce((a, r) => a + r.tok, 0) : 0;
-  $('#mText').textContent = '~' + fmtTok(keptTok) + ' of ~' + fmtTok(origTok) + ' tokens' + (keptTok < origTok ? ' (' + Math.round(100 - 100 * keptTok / origTok) + '% less)' : '') + '.'
-    + (rsTok > 500 ? ' Removing reasoning saves ~' + fmtTok(rsTok) + '.' : '');
+  const isRs = r => strip && r.item.type === 'reasoning';
+  const counted = fin.filter(r => !isRs(r));
+  const sum = (a, f) => a.reduce((s, r) => s + f(r), 0);
+  // Each source row is in exactly one group: removed by you, reasoning removed by the fork, or kept.
+  const srcRows = S.rows.filter(r => !r.inserted);
+  const srcTok = sum(srcRows, r => r.tok0);
+  const rmRows = srcRows.filter(gone), rsRows = fin.filter(r => !r.inserted && isRs(r));
+  const rmTok = sum(rmRows, r => r.tok0), rsTok = sum(rsRows, r => r.tok0);
+  const edRows = counted.filter(r => r.inserted || r.edited);
+  const edTok = sum(counted, r => r.tok - (r.inserted ? 0 : r.tok0));
+  const keptTok = sum(counted, r => r.tok);
+  const scale = Math.max(srcTok, keptTok) || 1;
+  $('#mTot').textContent = '~' + fmtTok(keptTok);
+  $('#mSub').textContent = 'tokens' + (srcTok && keptTok !== srcTok ? ' · ' + Math.round(100 * keptTok / srcTok) + '% of source' : '');
+  $('#mKeep').style.width = (100 * keptTok / scale) + '%';
+  $('#mRm').style.width = (100 * rmTok / scale) + '%';
+  $('#mRs').style.width = (100 * rsTok / scale) + '%';
+  const n = a => a.length.toLocaleString() + (a.length === 1 ? ' item' : ' items');
+  const sgn = v => (v < 0 ? '−' : '+') + fmtTok(Math.abs(v));
+  const lines = [['', 'Source window', '~' + fmtTok(srcTok)]];
+  if (rmRows.length) lines.push(['var(--bad)', 'Removed by you (' + n(rmRows) + ')', '−' + fmtTok(rmTok)]);
+  if (rsRows.length) lines.push(['var(--mute)', 'Reasoning removed by fork (' + n(rsRows) + ')', '−' + fmtTok(rsTok)]);
+  if (edRows.length) lines.push(['var(--acc)', 'Edited or added (' + n(edRows) + ')', sgn(edTok)]);
+  const brk = $('#mBrk'); brk.innerHTML = '';
+  for (const [c, l, v] of lines){
+    const k = document.createElement('i'); k.className = 'k'; if (c){ k.style.background = c; if (c === 'var(--mute)') k.style.opacity = .5; }
+    const a = document.createElement('span'); a.textContent = l;
+    const b = document.createElement('span'); b.className = 'v'; b.textContent = v;
+    brk.append(k, a, b);
+  }
+  for (const [l, v] of [['Fork context', '~' + fmtTok(keptTok)]]){
+    const k = document.createElement('i'); k.className = 'tot';
+    const a = document.createElement('span'); a.className = 'tot'; a.textContent = l;
+    const b = document.createElement('span'); b.className = 'v tot'; b.textContent = v;
+    brk.append(k, a, b);
+  }
+  $('#mBrk').title = 'Estimate at about 4 characters per token. The model also adds its system prompt and tool list.';
   $('#sKept').textContent = counted.length.toLocaleString();
   $('#sTurns').textContent = S.turns.filter(t => t.rows.some(r => !gone(r))).length;
-  $('#sDel').textContent = S.rows.filter(gone).length.toLocaleString();
-  $('#sEd').textContent = S.rows.filter(r => r.inserted || r.edited).length;
   $('#forkBtn').disabled = !fin.length;
   updateWarn(fin);
   document.querySelectorAll('.ptabs button').forEach(b => b.classList.toggle('on', b.dataset.t === S.ptab));
@@ -808,7 +861,7 @@ async function load(win){
     S.rows = d.items.map(x => { const tok = tokOf(x.item); return {key:x.key, turn_id:x.turn_id, ts:x.ts, item:x.item, orig:JSON.stringify(x.item),
       ctx: x.item.type === 'message' && x.item.role === 'user' && !x.real_user, fromCompaction:x.from_compaction,
       deleted:false, inserted:false, edited:false, tok:tok, tok0:tok}; });
-    Object.assign(S, {cut:null, undo:[], redo:[], sel:new Set(), anchor:null, focus:null, editing:null, open:new Set(), full:new Set(), banner:null, seq:0});
+    Object.assign(S, {cut:null, undo:[], redo:[], sel:new Set(), anchor:null, focus:null, editing:null, open:new Set(), shut:new Set(), full:new Set(), banner:null, seq:0});
     $('#main').className = ''; $('#ref').value = 'codex://threads/' + d.id; $('#result').textContent = '';
     renderSource(d);
     $('#name').value = '✂️ ' + (d.title || 'Edited fork').slice(0, 70);
@@ -873,11 +926,11 @@ $('#helpBtn').onclick = () => toggleHelp();
 $('#help').onclick = e => { if (e.target.id === 'help') toggleHelp(false); };
 function toggleHelp(v){ const m = $('#help'); const on = v == null ? m.style.display !== 'grid' : v; m.style.display = on ? 'grid' : 'none'; }
 $('#model').onchange = () => { fillEfforts($('#effort').value); renderPanel(); };
-$('#strip').onchange = () => renderPanel();
+$('#strip').onchange = () => render();
 $('#forkBtn').onclick = fork;
 $('#winSel').onchange = e => changeWindow(+e.target.value);
 $('#undoBtn').onclick = undo; $('#redoBtn').onclick = redo;
-$('#toolsOpen').onclick = () => { S.toolsOpen = !S.toolsOpen; if (!S.toolsOpen) S.open.clear(); render(); };
+$('#toolsOpen').onclick = () => { S.toolsOpen = !S.toolsOpen; S.shut.clear(); if (!S.toolsOpen) S.open.clear(); render(); };
 document.querySelectorAll('.chip[data-f]').forEach(ch => ch.onclick = () => { const f = ch.dataset.f; S.filters[f] = !S.filters[f]; render(); });
 document.querySelectorAll('.ptabs button').forEach(b => b.onclick = () => { S.ptab = b.dataset.t; renderPanel(); });
 let qT; $('#search').oninput = e => { clearTimeout(qT); qT = setTimeout(() => { S.q = e.target.value.toLowerCase().trim(); render(); }, 150); };
@@ -904,7 +957,7 @@ document.addEventListener('keydown', e => {
     case 'a': if (u){ e.preventDefault(); insertAfter(u.last, 'user'); } break;
     case 'o': case 'Enter': if (u){ e.preventDefault(); const k = kindOf(u.row);
       if (k === 'user' || k === 'assistant' || k === 'agentmsg') { S.full.has(u.key) ? S.full.delete(u.key) : S.full.add(u.key); }
-      else { S.open.has(u.key) ? S.open.delete(u.key) : S.open.add(u.key); } render(); } break;
+      else { toggleOpen(u); break; } render(); } break;
     case ' ': if (u){ e.preventDefault(); toggleSel(u.key, e.shiftKey); } break;
   }
 });
@@ -912,6 +965,26 @@ document.addEventListener('keydown', e => {
 // ---------- start
 const qs = new URLSearchParams(location.search), start = qs.get('thread');
 loadInfo().then(() => { if (start){ $('#ref').value = start; load(+qs.get('window') || null); } else showHome(); });
+
+// Show hints at once on hover. The browser's own title tooltip waits about a second.
+(function(){
+  const tip = document.getElementById('tip'); let cur = null;
+  const hide = () => { tip.style.display = 'none'; if (cur && cur.dataset.tip != null && !cur.hasAttribute('title')) cur.setAttribute('title', cur.dataset.tip); cur = null; };
+  document.addEventListener('mouseover', e => {
+    const el = e.target.closest && e.target.closest('[title],[data-tip]');
+    if (el === cur) return; hide();
+    if (!el || !(el.matches('button,.selbox,.sz,.tag,a,.chip') || el.closest('#panel'))) return;
+    const t = el.getAttribute('title') || el.dataset.tip; if (!t) return;
+    el.dataset.tip = t; el.removeAttribute('title'); cur = el;
+    tip.textContent = t; tip.style.display = 'block';
+    const r = el.getBoundingClientRect(), w = tip.offsetWidth, hgt = tip.offsetHeight;
+    let x = Math.min(Math.max(6, r.left + r.width / 2 - w / 2), innerWidth - w - 6);
+    let y = r.bottom + 6; if (y + hgt > innerHeight - 6) y = r.top - hgt - 6;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  });
+  document.addEventListener('mousedown', hide, true);
+  addEventListener('scroll', hide, true);
+})();
 </script>
 </body>
 </html>

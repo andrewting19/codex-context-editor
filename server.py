@@ -82,7 +82,17 @@ def register_fork(thread_id: str, name: str) -> tuple[int | None, list[str]]:
         try:
             # A resume builds the turn index that the Codex app shows as the transcript.
             s.request("thread/resume", {"threadId": thread_id, "excludeTurns": True})
-            turns = len(s.request("thread/turns/list", {"threadId": thread_id}).get("data", []))
+            # The list is paged. Follow the cursor to count all turns.
+            turns, cursor = 0, None
+            for _ in range(500):
+                params = {"threadId": thread_id}
+                if cursor:
+                    params["cursor"] = cursor
+                page = s.request("thread/turns/list", params)
+                turns += len(page.get("data", []))
+                cursor = page.get("nextCursor")
+                if not cursor or not page.get("data"):
+                    break
         except AppServerError as e:
             warnings.append(f"Could not build the transcript index: {e}")
         try:
