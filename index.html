@@ -592,7 +592,7 @@ function card(u){
   else if (k === 'context') ttl = h('span', {class:'ttl mono click', onclick:toggle}, ctxTitle(txt));
   else if (k === 'developer') ttl = h('span', {class:'ttl click', onclick:toggle}, open ? 'Developer instructions' : txt.replace(/\s+/g, ' ').slice(0, 200));
   else if (k === 'reasoning') ttl = h('span', {class:'ttl click', onclick:toggle}, txt ? txt.replace(/\s+/g, ' ').slice(0, 200) : 'Encrypted reasoning');
-  else if (k === 'compaction') ttl = h('span', {class:'ttl click', onclick:toggle}, isOcx(it) ? 'Summary of the older turns: ' + txt.replace(/^#.*\n/, '').replace(/\s+/g, ' ').slice(0, 160) : 'Encrypted summary of the older turns');
+  else if (k === 'compaction') ttl = h('span', {class:'ttl click', onclick:toggle}, isOcx(it) ? 'Summary of the older turns: ' + txt.replace(/^#.*\n/, '').replace(/[#*|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160) : 'Encrypted summary of the older turns');
   else if (k === 'agentmsg') ttl = h('span', {class:'ttl mono'}, (it.author || '?') + ' → ' + (it.recipient || '?'));
   else ttl = h('span', {class:'ttl'});
 

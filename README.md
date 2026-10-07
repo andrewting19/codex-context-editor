@@ -74,9 +74,12 @@ Press **?** in the editor to see the keyboard shortcuts (`j`/`k` to move, `x` to
 ## Limits
 
 - This tool uses the Codex rollout format, which is not a public API. A Codex update can break it.
-- Reasoning items and compaction summaries are encrypted. You can remove them, but you cannot
-  edit them. **Remove reasoning items** is on by default, because encrypted reasoning from one
-  model can fail on another model.
+- Reasoning items are encrypted. You can remove them, but you cannot edit them. **Remove
+  reasoning items** is on by default, because encrypted reasoning from one model can fail on
+  another model.
+- Compaction summaries from OpenAI models are encrypted, so you can only remove them. If you use
+  [OpenCodex](https://opencodex.me), its summaries are stored as plain text (`ocx1:` plus base64).
+  The editor shows these summaries and lets you edit them like a message.
 - In the Codex app, the fork transcript shows user and assistant messages. Tool calls stay in the
   model context, but they do not show in the transcript.
 - Codex can still be writing to a thread that is running. Fork from a thread that is idle.
