@@ -72,7 +72,7 @@ main.home #outline,main.home #panel,main.home #bar{display:none}
 .thead .tact{display:flex;gap:4px;opacity:0}
 .thead:hover .tact{opacity:1}
 .tag{font-size:11px;padding:0 7px;border-radius:999px;background:var(--card2);color:var(--mute);white-space:nowrap;line-height:18px}
-.tag.cc{color:#d97757;background:rgba(217,119,87,.12)}.tag.edited{color:var(--warn)}.tag.new{color:var(--asst)}.tag.cmp{color:var(--acc)}.tag.bad{color:var(--bad)}
+.tag.cc{color:#d97757;background:rgba(217,119,87,.12)}.tag.t3{color:#c084fc;background:rgba(192,132,252,.12)}.tag.edited{color:var(--warn)}.tag.new{color:var(--asst)}.tag.cmp{color:var(--acc)}.tag.bad{color:var(--bad)}
 .sz{font-size:11px;color:var(--faint);white-space:nowrap;font-variant-numeric:tabular-nums}
 .sz.md{color:var(--mute)}.sz.lg{color:var(--warn)}.sz.xl{color:var(--bad);font-weight:600}
 .card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 10px 8px 14px;scroll-margin-top:70px}
@@ -179,7 +179,7 @@ main.home #outline,main.home #panel,main.home #bar{display:none}
 <body>
 <header>
   <div class="logo" id="homeBtn" title="Recent threads">✂️ <span>Context Editor</span></div>
-  <input id="ref" placeholder="Paste a codex://threads/… link, a Claude Code session id, or a thread id" autocomplete="off" spellcheck="false">
+  <input id="ref" placeholder="Paste a codex://threads/… link, a T3 Code or Claude Code thread id, or a thread id" autocomplete="off" spellcheck="false">
   <button class="primary" id="loadBtn">Load</button>
   <button class="ghost" id="helpBtn" title="Keyboard shortcuts (?)">⌨︎ Shortcuts</button>
 </header>
@@ -206,7 +206,7 @@ main.home #outline,main.home #panel,main.home #bar{display:none}
     <label class="pl" for="effort">Reasoning effort</label><select id="effort"></select>
     <label class="pl" for="name">Name</label><input type="text" id="name" placeholder="Name of the new thread">
     <label class="check"><input type="checkbox" id="strip" checked><span>Remove reasoning items<br><span class="muted" style="font-size:12px">Encrypted reasoning from one model can fail on another model.</span></span></label>
-    <label class="check" id="openRow"><input type="checkbox" id="openApp" checked><span>Open the fork in Codex</span></label>
+    <label class="check" id="openRow"><input type="checkbox" id="openApp" checked><span id="openLbl">Open the fork in Codex</span></label>
     <label class="pl">Fork context size</label>
     <div class="ctxhead"><b id="mTot">0</b><span id="mSub">tokens (estimate)</span></div>
     <div class="meter"><i id="mKeep"></i><i id="mRm" class="rm"></i><i id="mRs" class="rs"></i></div>
@@ -850,7 +850,7 @@ function showHome(){
   const q = h('input', {id:'tq', placeholder:'Search Codex threads and Claude Code sessions by name, first message, or folder', autocomplete:'off'});
   const tl = h('div', {id:'tlist'}, h('div', {class:'empty'}, 'Loading threads…'));
   list.append(h('div', {id:'home'}, h('h2', null, 'Edit what the model sees, then fork it'),
-    h('p', null, 'Pick a Codex thread or a Claude Code session. Remove, edit, or add items in its context, or go back to before a compaction. Then create a new thread from that point with the model you choose.'),
+    h('p', null, 'Pick a Codex, T3 Code, or Claude Code thread. Remove, edit, or add items in its context, or go back to before a compaction. Then create a new thread from that point with the model you choose.'),
     q, tl));
   q.oninput = () => { clearTimeout(homeT); homeT = setTimeout(() => loadThreads(q.value), 200); };
   q.onkeydown = e => { if (e.key === 'Enter'){ const f = document.querySelector('.trow'); if (f) f.click(); } };
@@ -866,7 +866,7 @@ async function loadThreads(q){
     tl.append(h('div', {class:'trow', onclick:() => { $('#ref').value = t.id; load(); }},
       h('div', {class:'a'}, h('b', null, t.title), h('span', {class:'muted', style:'font-size:12px;white-space:nowrap'}, rel(t.updated_ms))),
       t.first && t.first !== t.title ? h('div', {class:'c'}, t.first) : null,
-      h('div', {class:'c', style:'font-size:11.5px'}, t.source === 'claude' ? h('span', {class:'tag cc', style:'margin-right:6px'}, 'Claude Code') : null, shortPath(t.cwd) + (t.model ? '  ·  ' + t.model : ''))));
+      h('div', {class:'c', style:'font-size:11.5px'}, t.t3 ? h('span', {class:'tag t3', style:'margin-right:6px'}, 'T3 Code') : null, t.source === 'claude' ? h('span', {class:'tag cc', style:'margin-right:6px'}, 'Claude Code') : null, shortPath(t.cwd) + (t.model ? '  ·  ' + t.model : ''))));
   }
 }
 
@@ -880,7 +880,7 @@ async function load(win){
     const q = '/api/thread?ref=' + encodeURIComponent(ref) + (win ? '&window=' + win : '');
     const res = await Promise.all([api(q), S.models.length || (S.cmodels || []).length ? null : loadInfo()]);
     const d = res[0];
-    S.thread = {id:d.id, source:d.source || 'codex', resume:d.resume_cmd, window:d.window, windows:d.windows, title:d.title, cwd:d.cwd, model:d.model, effort:d.effort, n:d.items.length};
+    S.thread = {id:d.id, source:d.source || 'codex', resume:d.resume_cmd, t3:d.t3 || null, window:d.window, windows:d.windows, title:d.title, cwd:d.cwd, model:d.model, effort:d.effort, n:d.items.length};
     S.rows = d.items.map(x => { const tok = tokOf(x.item); return {key:x.key, turn_id:x.turn_id, ts:x.ts, item:x.item, orig:JSON.stringify(x.item),
       ctx: x.item.type === 'message' && x.item.role === 'user' && !x.real_user, fromCompaction:x.from_compaction,
       deleted:false, inserted:false, edited:false, tok:tok, tok0:tok}; });
@@ -888,8 +888,9 @@ async function load(win){
       S.rows.unshift({key:'sys', turn_id:'__system__', ts:null, item:it, orig:JSON.stringify(it), ctx:false, fromCompaction:false,
         deleted:false, inserted:false, edited:false, tok:tok, tok0:tok}); }
     Object.assign(S, {cut:null, undo:[], redo:[], sel:new Set(), anchor:null, focus:null, editing:null, open:new Set(), shut:new Set(), full:new Set(), banner:null, seq:0});
-    $('#main').className = ''; $('#ref').value = d.source === 'claude' ? d.id : 'codex://threads/' + d.id;
-    $('#openRow').style.display = d.source === 'claude' || !S.info.can_open_links ? 'none' : ''; $('#result').textContent = '';
+    $('#main').className = ''; $('#ref').value = d.t3 ? d.t3.thread_id : d.source === 'claude' ? d.id : 'codex://threads/' + d.id;
+    $('#openRow').style.display = !S.info.can_open_links || (d.source === 'claude' && !d.t3) ? 'none' : '';
+    $('#openLbl').textContent = d.t3 ? 'Open the fork in T3 Code' : 'Open the fork in Codex'; $('#result').textContent = '';
     renderSource(d);
     $('#name').value = '✂️ ' + (d.title || 'Edited fork').slice(0, 70);
     fillModels(d.model);
@@ -898,7 +899,7 @@ async function load(win){
       h('button', {class:'sm primary', onclick:() => { S.banner = null; S.undo.push(snap()); applyDraft(dr); render(); toast('Changes restored.'); }}, 'Restore'),
       h('button', {class:'sm', onclick:() => { S.banner = null; localStorage.removeItem(dkey()); render(); }}, 'Discard'));
     const w = d.windows.find(x => x.n === d.window);
-    history.replaceState(null, '', '?thread=' + d.id + (w && !w.current ? '&window=' + w.n : ''));
+    history.replaceState(null, '', '?thread=' + (d.t3 ? d.t3.thread_id : d.id) + (w && !w.current ? '&window=' + w.n : ''));
     document.title = (d.title || d.id) + ' · Context Editor';
     $('#center').scrollTop = 0; S.showWin = true;
     render();
@@ -914,6 +915,8 @@ function renderSource(d){
   add(s, [h('b', null, d.title || '(untitled)'), h('div', null, d.cwd || ''),
     h('div', null, 'Source model: ' + (d.model || '?') + (d.effort ? ' · ' + d.effort : '')),
     w && !w.current ? h('div', {style:'color:var(--acc);margin-top:4px'}, 'Showing the context before compaction ' + w.n + ' of ' + (d.windows.length - 1) + '.') : null,
+    d.t3 ? h('div', {style:'margin-top:4px'}, h('span', {class:'tag t3'}, 'T3 Code'), d.t3.project ? h('span', {class:'muted'}, ' ' + d.t3.project + ' · ') : ' ',
+      S.info.can_open_links && d.t3.link ? h('a', {href:d.t3.link}, 'Open source thread in T3 Code ↗') : null) :
     d.source === 'claude' ? h('div', {style:'margin-top:4px'}, h('span', {class:'tag cc'}, 'Claude Code'), ' ', h('a', {href:'#', onclick:e => { e.preventDefault(); copyText(d.resume_cmd, 'the resume command'); }, title:d.resume_cmd}, 'Copy resume command'))
     : S.info.can_open_links ? h('div', {style:'margin-top:4px'}, h('a', {href:'codex://threads/' + d.id}, 'Open source thread in Codex ↗')) : null]);
 }
@@ -929,14 +932,18 @@ async function fork(){
     const res = await api('/api/fork', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
       source_id:S.thread.id, window:S.thread.window, items:fin.filter(r => kindOf(r) !== 'system').map(r => ({turn_id:r.turn_id, item:r.item})),
       system_prompt:(S.sysUnit && S.sysUnit.row.edited) ? S.sysUnit.row.item.text : undefined, model:$('#model').value, effort:$('#effort').value,
-      name:$('#name').value, strip_reasoning:$('#strip').checked, open:$('#openApp').checked})});
+      name:$('#name').value, strip_reasoning:$('#strip').checked, open:$('#openApp').checked, open_t3:$('#openApp').checked})});
     localStorage.removeItem(dkey());
     const copy = copyText;
     const box = h('div', {class:'result'},
       h('div', null, h('b', null, '✅ Fork created'), ' · ' + res.item_count + ' items in ' + res.turns + ' turns'),
       h('div', {class:'mono muted', style:'font-size:11.5px;margin-top:3px;word-break:break-all'}, res.id),
-      res.source === 'claude' ? h('div', {class:'mono', style:'font-size:11.5px;margin-top:8px;padding:6px 8px;background:var(--card2);border-radius:6px;word-break:break-all;user-select:all'}, res.resume_cmd) : null,
-      res.source === 'claude' ? h('div', {class:'acts'},
+      res.t3 ? h('div', {class:'acts'},
+        S.info.can_open_links && res.t3.link ? h('a', {class:'abtn sm primary', href:res.t3.link}, 'Open in T3 Code') : null,
+        res.t3.link ? h('button', {class:'sm', onclick:() => copy(res.t3.link, 'the T3 Code link')}, 'Copy link') : null,
+        h('button', {class:'sm', onclick:() => { $('#ref').value = res.t3.thread_id; load(); }}, 'Edit the fork')) : null,
+      res.t3 ? null : res.source === 'claude' ? h('div', {class:'mono', style:'font-size:11.5px;margin-top:8px;padding:6px 8px;background:var(--card2);border-radius:6px;word-break:break-all;user-select:all'}, res.resume_cmd) : null,
+      res.t3 ? null : res.source === 'claude' ? h('div', {class:'acts'},
         h('button', {class:'sm primary', onclick:() => copy(res.resume_cmd, 'the resume command')}, 'Copy resume command'),
         h('button', {class:'sm', onclick:() => { $('#ref').value = res.id; load(); }}, 'Edit the fork')) :
       h('div', {class:'acts'},
@@ -945,7 +952,7 @@ async function fork(){
         h('button', {class:'sm', onclick:() => copy('codex resume ' + res.id, 'the command')}, 'Copy resume command'),
         h('button', {class:'sm', onclick:() => { $('#ref').value = res.id; load(); }}, 'Edit the fork')),
       (res.warnings || []).map(x => h('div', {class:'warn'}, '⚠ ' + x)),
-      h('div', {class:'muted', style:'font-size:12px;margin-top:8px'}, res.source === 'claude' ? 'Run the command in a terminal, then send your next message to continue from this context.' : 'Send your next message in the fork to continue from this context.'));
+      h('div', {class:'muted', style:'font-size:12px;margin-top:8px'}, res.t3 ? 'T3 Code shows only new messages in the fork. The model has all of the edited context.' : res.source === 'claude' ? 'Run the command in a terminal, then send your next message to continue from this context.' : 'Send your next message in the fork to continue from this context.'));
     const r = $('#result'); r.textContent = ''; r.append(box); box.scrollIntoView({block:'nearest'});
   } catch (e) { toast('Fork failed: ' + e.message, 8000); }
   btn.disabled = false; btn.textContent = 'Create forked thread';

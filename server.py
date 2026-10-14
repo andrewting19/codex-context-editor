@@ -20,6 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import claudecode  # noqa: E402
 import ctxedit  # noqa: E402
+import t3code  # noqa: E402
 from appserver import AppServer, AppServerError  # noqa: E402
 
 MAX_BODY = 200 * 1024 * 1024
@@ -106,8 +107,18 @@ def register_fork(thread_id: str, name: str) -> tuple[int | None, list[str]]:
     return turns, warnings
 
 
+def _t3_find(tid: str) -> dict | None:
+    try:
+        return t3code.find(tid) if t3code.available() else None
+    except Exception:
+        return None
+
+
 def source_of(tid: str) -> str:
-    """Which tool owns the id: "codex" or "claude"."""
+    """Which tool owns the id: "codex" or "claude". A T3 Code id counts as its native session's tool."""
+    t3 = _t3_find(tid)
+    if t3 and t3["native_id"] != tid:
+        return source_of(t3["native_id"])
     try:
         ctxedit.find_rollout(tid)
         return "codex"
@@ -119,10 +130,18 @@ def source_of(tid: str) -> str:
 
 def load_any(ref: str, window: int | None) -> dict:
     tid = ctxedit.parse_thread_id(ref)
+    t3 = _t3_find(tid)
+    if t3:
+        tid = t3["native_id"]  # a T3 Code thread: edit the Codex or Claude session behind it
     if source_of(tid) == "claude":
-        return claudecode.load_session(tid, window)
-    d = ctxedit.load_thread(tid, window)
-    d["source"] = "codex"
+        d = claudecode.load_session(tid, window)
+    else:
+        d = ctxedit.load_thread(tid, window)
+        d["source"] = "codex"
+    if t3:
+        d["t3"] = {"thread_id": t3["t3_id"], "title": t3["title"], "link": t3code.link(t3["t3_id"]),
+                   "project": os.path.basename(t3.get("workspace_root") or "") or None}
+        d["title"] = t3["title"] or d.get("title")
     return d
 
 
@@ -132,12 +151,35 @@ def list_all(q: str, src: str) -> list[dict]:
         rows += [dict(r, source="codex") for r in ctxedit.list_threads(q)]
     if src in ("", "all", "claude"):
         rows += claudecode.list_sessions(q)
+    t3 = {t["native_id"]: t for t in t3code.threads()} if t3code.available() else {}
+    for r in rows:
+        if r["id"] in t3:
+            r["t3"] = True
+            r["title"] = t3[r["id"]]["title"] or r["title"]
     rows.sort(key=lambda r: r.get("updated_ms") or 0, reverse=True)
     return rows[:80]
 
 
 def do_fork(body: dict) -> dict:
     src = ctxedit.parse_thread_id(body["source_id"])
+    t3 = _t3_find(src) if body.get("t3", True) else None
+    if t3:
+        src = t3["native_id"]
+        body = dict(body, open=False)  # open the fork in T3 Code, not in the Codex app
+    res = _fork_native(body, src)
+    if t3:
+        try:
+            out = t3code.create_thread(t3, res["id"], (body.get("name") or "").strip(), body.get("model") or None)
+            res["t3"] = out
+            if body.get("open_t3") and out.get("link") and can_open_links():
+                open_link(out["link"])
+        except Exception as e:
+            res.setdefault("warnings", []).append(f"The fork was made, but T3 Code did not add it: {e}. "
+                                                  "Make sure T3 Code is open, then try again.")
+    return res
+
+
+def _fork_native(body: dict, src: str) -> dict:
     items = body.get("items") or []
     if not items:
         raise ValueError("Nothing to fork: every item is removed.")

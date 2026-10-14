@@ -9,6 +9,8 @@ compaction, and choose the model and reasoning effort for the fork.
 The source thread does not change. A Codex fork is a normal Codex thread: open it in the Codex app
 or with `codex resume <id>` and send your next message. A Claude Code fork is a normal Claude Code
 session: the editor gives you a `claude --resume <id>` command to copy and run in a terminal.
+If you use [T3 Code](https://github.com/pingdotgg/t3code), you can load a T3 Code thread by its
+id, and the fork opens as a new thread in the T3 Code app.
 
 ## Requirements
 
@@ -18,6 +20,8 @@ session: the editor gives you a `claude --resume <id>` command to copy and run i
 - Threads in `~/.codex` (or in `$CODEX_HOME` if you set it).
 - For Claude Code: sessions in `~/.claude/projects` (or in `$CLAUDE_CONFIG_DIR`). The editor
   needs no Codex binary to edit Claude Code sessions. Tested with Claude Code 2.1.
+- For T3 Code: T3 Code data in `~/.t3` (or in `$T3CODE_HOME`), and the T3 Code app or server
+  running when you fork. Tested with T3 Code 0.0.46.
 
 Tested on macOS and Linux with Codex CLI 0.155 to 0.160.
 
@@ -44,7 +48,8 @@ Then open http://127.0.0.1:7317 on your computer. The fork is written on the rem
 
 1. Pick a thread from the list of recent threads, or paste a thread link such as
    `codex://threads/01a10d09-...`, a Claude Code session id, or a `claude --resume <id>` command,
-   and press **Load**. Claude Code sessions have an orange **Claude Code** label.
+   and press **Load**. Claude Code sessions have an orange **Claude Code** label. T3 Code
+   thread ids also work; these threads have a purple **T3 Code** label.
 2. Edit the context. Each item shows its estimated size in tokens. Large items are orange or red.
    - **Context windows** (left column): if the thread was compacted, select an earlier window.
      "Before compaction N" is the full context just before compaction N.
@@ -103,6 +108,18 @@ Press **?** in the editor to see the keyboard shortcuts (`j`/`k` to move, `x` to
 - `claude --resume` finds sessions by the current folder, so the command starts with `cd` to the
   session's project folder. The command also has `--model` and `--effort` for your choices.
 
+### T3 Code threads
+
+- T3 Code runs Codex (or Claude Code) for each thread and keeps a link from its thread id to the
+  native thread id in `~/.t3/userdata/statev2.sqlite`. The editor reads this link (read only)
+  and loads the native Codex thread or Claude Code session.
+- The fork is made in the same way as for Codex or Claude Code. Then the editor asks the T3 Code
+  server to make a new T3 Code thread in the same project that is linked to the fork. For this
+  it gets a short-lived token from the `t3` CLI (`~/.t3/bin/t3 auth session issue`) and
+  revokes the token after use.
+- With **Open the fork in T3 Code**, the editor opens the new thread in the app through a
+  `t3code://` link.
+
 ## Limits
 
 - This tool uses the Codex rollout format, which is not a public API. A Codex update can break it.
@@ -115,6 +132,9 @@ Press **?** in the editor to see the keyboard shortcuts (`j`/`k` to move, `x` to
 - In the Codex app, the fork transcript shows user and assistant messages. Tool calls stay in the
   model context, but they do not show in the transcript.
 - Codex can still be writing to a thread that is running. Fork from a thread that is idle.
+- In T3 Code, a fork thread shows only the messages that you send after the fork. The model
+  still has the full edited context. T3 Code gives the thread a new title from your first
+  message.
 
 ## Test
 
