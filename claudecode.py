@@ -110,6 +110,7 @@ def _summary(path: str) -> dict | None:
     if hit and hit[0] == st.st_mtime:
         return hit[1]
     title = ai_title = first = cwd = model = None
+    last_ts = None
     msgs = 0
     with open(path, encoding="utf-8", errors="replace") as f:
         for raw in f:
@@ -135,6 +136,7 @@ def _summary(path: str) -> dict | None:
                 continue
             msgs += 1
             cwd = cwd or l.get("cwd")
+            last_ts = l.get("timestamp") or last_ts
             if l.get("type") == "assistant":
                 model = l.get("message", {}).get("model") or model
             elif first is None and is_real_user(l):
@@ -143,11 +145,23 @@ def _summary(path: str) -> dict | None:
         res = None
     else:
         first = re.sub(r"\s+", " ", first or "")[:200]
+        # Claude Code appends bookkeeping lines (for example last-prompt) to old sessions,
+        # so the file time can be much newer than the last message. Use the message time.
+        updated = _ts_ms(last_ts) or int(st.st_mtime * 1000)
         res = {"id": os.path.basename(path)[:-6], "title": title or ai_title or first[:80] or "(untitled)",
                "first": first, "cwd": cwd, "model": model if model and not model.startswith("<") else None,
-               "updated_ms": int(st.st_mtime * 1000), "source": "claude"}
+               "updated_ms": updated, "source": "claude"}
     _list_cache[path] = (st.st_mtime, res)
     return res
+
+
+def _ts_ms(ts) -> int | None:
+    if not isinstance(ts, str) or not ts:
+        return None
+    try:
+        return int(datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp() * 1000)
+    except ValueError:
+        return None
 
 
 def list_sessions(query: str = "", limit: int = 60) -> list[dict]:
@@ -168,7 +182,13 @@ def list_sessions(query: str = "", limit: int = 60) -> list[dict]:
     files.sort(reverse=True)
     q = (query or "").lower().strip()
     out = []
-    for _, p in files:
+    for i, (_, p) in enumerate(files):
+        # The file time is never older than the last message, so once we have enough sessions
+        # that are newer than the next file, no later file can enter the list.
+        if len(out) >= limit:
+            newest = sorted((s["updated_ms"] for s in out), reverse=True)
+            if newest[limit - 1] >= files[i][0] * 1000:
+                break
         try:
             s = _summary(p)
         except OSError:
@@ -178,9 +198,8 @@ def list_sessions(query: str = "", limit: int = 60) -> list[dict]:
         if q and q not in " ".join(str(s.get(k) or "") for k in ("id", "title", "first", "cwd")).lower():
             continue
         out.append(s)
-        if len(out) >= limit:
-            break
-    return out
+    out.sort(key=lambda s: s["updated_ms"], reverse=True)
+    return out[:limit]
 
 
 # ---------------------------------------------------------------- chains and windows
