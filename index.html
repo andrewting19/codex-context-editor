@@ -77,7 +77,7 @@ main.home #outline,main.home #panel,main.home #bar{display:none}
 .sz.md{color:var(--mute)}.sz.lg{color:var(--warn)}.sz.xl{color:var(--bad);font-weight:600}
 .card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 10px 8px 14px;scroll-margin-top:70px}
 .card:before{content:"";position:absolute;left:-1px;top:7px;bottom:7px;width:3px;border-radius:3px;background:var(--ctx)}
-.card.user:before{background:var(--user)}.card.assistant:before{background:var(--asst)}.card.developer:before{background:var(--dev)}.card.tool:before,.card.toolout:before{background:var(--tool)}.card.reasoning:before,.card.compaction:before{background:var(--faint)}
+.card.user:before{background:var(--user)}.card.assistant:before{background:var(--asst)}.card.developer:before,.card.system:before{background:var(--dev)}.card.tool:before,.card.toolout:before{background:var(--tool)}.card.reasoning:before,.card.compaction:before{background:var(--faint)}
 .card.user{background:color-mix(in srgb,var(--user) 7%,var(--card))}
 .card.del{opacity:.45}.card.del .body,.card.del .ttl{text-decoration:line-through}
 .card.after{opacity:.3}
@@ -88,7 +88,7 @@ main.home #outline,main.home #panel,main.home #bar{display:none}
 .chd{display:flex;align-items:center;gap:8px;min-height:24px}
 .who{font-size:12px;font-weight:600;white-space:nowrap;color:var(--mute)}
 .card.agentmsg:before{background:var(--acc)}.card.agentmsg .who{color:var(--acc)}
-.card.user .who{color:var(--user)}.card.assistant .who{color:var(--asst)}.card.developer .who{color:var(--dev)}.card.tool .who,.card.toolout .who{color:var(--tool)}
+.card.user .who{color:var(--user)}.card.assistant .who{color:var(--asst)}.card.developer .who,.card.system .who{color:var(--dev)}.card.tool .who,.card.toolout .who{color:var(--tool)}
 .ttl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--mute);font-size:12.5px}
 .ttl.mono{font-size:12px}.ttl b{color:var(--fg);font-weight:600}
 .ttl.click{cursor:pointer}.ttl.click:hover{color:var(--fg)}
@@ -292,6 +292,7 @@ function itemText(it){
   if (t === 'custom_tool_call') return it.input || '';
   if (t === 'reasoning') return (it.summary || []).map(s => s.text || '').join('\n');
   if (isOcx(it)) return ocxDecode(it.encrypted_content);
+  if (t === 'system_prompt') return it.text || '';
   return '';
 }
 function setText(it, txt){
@@ -304,6 +305,7 @@ function setText(it, txt){
   else if (t === 'function_call') it.arguments = txt;
   else if (t === 'custom_tool_call') it.input = txt;
   else if (isOcx(it)) it.encrypted_content = ocxEncode(txt);
+  else if (t === 'system_prompt') it.text = txt;
 }
 // OpenCodex stores the compaction summaries it writes as "ocx1:" + base64(plain text). These can be read and edited.
 // Summaries that start with "gAAAA" are encrypted by OpenAI and only OpenAI can read them.
@@ -311,7 +313,7 @@ const OCX = 'ocx1:';
 const isOcx = it => /compaction/.test(it.type || '') && typeof it.encrypted_content === 'string' && it.encrypted_content.startsWith(OCX);
 function ocxDecode(s){ try { return new TextDecoder().decode(Uint8Array.from(atob(s.slice(OCX.length)), c => c.charCodeAt(0))); } catch (e) { return ''; } }
 function ocxEncode(txt){ const b = new TextEncoder().encode(txt); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return OCX + btoa(s); }
-const editable = it => isOcx(it) || it.type === 'message' || it.type === 'agent_message' || it.type === 'function_call' || it.type === 'custom_tool_call' || /_output$/.test(it.type || '');
+const editable = it => isOcx(it) || it.type === 'system_prompt' || it.type === 'message' || it.type === 'agent_message' || it.type === 'function_call' || it.type === 'custom_tool_call' || /_output$/.test(it.type || '');
 function images(it){ return (it.type === 'message' || it.type === 'agent_message' ? (it.content || []) : []).filter(c => c && /image/.test(c.type || '') && typeof c.image_url === 'string'); }
 function tokOf(it){
   let n = itemText(it).length / 4;
@@ -323,6 +325,7 @@ function tokOf(it){
 }
 function kindOf(r){
   const it = r.item;
+  if (it.type === 'system_prompt') return 'system';
   if (it.type === 'message'){
     if (it.role === 'user') return r.ctx ? 'context' : 'user';
     if (it.role === 'assistant') return 'assistant';
@@ -337,7 +340,7 @@ function kindOf(r){
 function who(r, k){
   const it = r.item;
   return {user:'User', assistant: it.phase === 'commentary' ? 'Commentary' : 'Assistant', developer: it.role === 'system' ? 'System' : 'Developer',
-    context:'Context', agentmsg:'Agent message', tool:'Tool', toolout:'Tool output', reasoning:'Reasoning', compaction:'Compaction'}[k];
+    context:'Context', system:'System prompt', agentmsg:'Agent message', tool:'Tool', toolout:'Tool output', reasoning:'Reasoning', compaction:'Compaction'}[k];
 }
 function ctxTitle(txt){ const t = txt.trimStart(); const m = t.match(/^<([\w:.-]+)/); if (m) return '<' + m[1] + '>';
   if (t.startsWith('# AGENTS.md')) return 'AGENTS.md'; return t.split('\n')[0].slice(0, 80); }
@@ -383,7 +386,9 @@ function prep(){
     if (k === 'tool' && cid) calls.set(cid, u);
   }
   S.turns = []; let cur = null;
+  S.sysUnit = null;
   for (const u of S.units){
+    if (kindOf(u.row) === 'system'){ S.sysUnit = u; continue; }
     if (!cur || cur.id !== u.row.turn_id){ cur = {n:S.turns.length + 1, id:u.row.turn_id, units:[], rows:[]}; S.turns.push(cur); }
     cur.units.push(u); u.turn = cur; cur.rows.push(u.row); if (u.out) cur.rows.push(u.out);
   }
@@ -422,11 +427,12 @@ function redo(){ if (!S.redo.length) return toast('Nothing to redo.'); S.undo.pu
 const dirty = () => S.cut != null || S.rows.some(r => r.deleted || r.inserted || r.edited);
 
 function setDeleted(keys, v){
-  const rows = new Set(); for (const k of keys){ const r = S.rows[S.idx.get(k)]; if (r) pairRows(r).forEach(x => rows.add(x)); }
+  const rows = new Set(); for (const k of keys){ const r = S.rows[S.idx.get(k)]; if (r && kindOf(r) !== 'system') pairRows(r).forEach(x => rows.add(x)); }
+  if (!rows.size) return toast('You can edit the system prompt, but you cannot remove it.');
   mutate(() => rows.forEach(r => r.deleted = v));
   if (v) toast('Removed ' + rows.size + (rows.size === 1 ? ' item.' : ' items.'), 4000, {label:'Undo', fn:undo});
 }
-function setCut(key){ mutate(() => { S.cut = S.cut === key ? null : key; }); }
+function setCut(key){ const sr = S.rows[S.idx.get(key)]; if (sr && kindOf(sr) === 'system') return; mutate(() => { S.cut = S.cut === key ? null : key; }); }
 function insertAfter(after, role){
   mutate(() => {
     const i = after == null ? -1 : S.idx.get(after), prev = S.rows[i];
@@ -490,6 +496,7 @@ function renderList(){
   const c = $('#center'), top = c.scrollTop, list = $('#list');
   list.textContent = ''; S.order = [];
   if (S.banner) list.append(S.banner);
+  if (S.sysUnit && visible(S.sysUnit)){ list.append(h('div', {class:'turn'}, card(S.sysUnit))); S.order.push(S.sysUnit.key); }
   list.append(insBar(null));
   let shown = 0;
   for (const t of S.turns){
@@ -578,7 +585,7 @@ function toggleOpen(u){
 }
 function card(u){
   const r = u.row, it = r.item, k = kindOf(r), key = u.key;
-  const collapsible = k === 'context' || k === 'tool' || k === 'toolout' || k === 'reasoning' || k === 'compaction' || k === 'developer';
+  const collapsible = k === 'system' || k === 'context' || k === 'tool' || k === 'toolout' || k === 'reasoning' || k === 'compaction' || k === 'developer';
   const editingHere = S.editing && u.keys.includes(S.editing.key);
   const open = !collapsible || editingHere || isOpen(u);
   const c = h('div', {class:'card ' + k + (r.deleted ? ' del' : '') + (afterCut(r) ? ' after' : '') + (S.sel.has(key) ? ' sel' : '') + (S.focus === key ? ' focus' : ''), 'data-k':key});
@@ -590,6 +597,7 @@ function card(u){
   if (k === 'tool') ttl = h('span', {class:'ttl mono click', onclick:toggle, title:'Show or hide'}, h('b', null, toolName(it)), '  ' + toolSummary(it));
   else if (k === 'toolout') ttl = h('span', {class:'ttl mono click', onclick:toggle}, txt.replace(/\s+/g, ' ').slice(0, 200));
   else if (k === 'context') ttl = h('span', {class:'ttl mono click', onclick:toggle}, ctxTitle(txt));
+  else if (k === 'system') ttl = h('span', {class:'ttl click', onclick:toggle}, open ? 'The base instructions Codex sends before everything else' : txt.replace(/\s+/g, ' ').slice(0, 200));
   else if (k === 'developer') ttl = h('span', {class:'ttl click', onclick:toggle}, open ? 'Developer instructions' : txt.replace(/\s+/g, ' ').slice(0, 200));
   else if (k === 'reasoning') ttl = h('span', {class:'ttl click', onclick:toggle}, txt ? txt.replace(/\s+/g, ' ').slice(0, 200) : 'Encrypted reasoning');
   else if (k === 'compaction') ttl = h('span', {class:'ttl click', onclick:toggle}, isOcx(it) ? 'Summary of the older turns: ' + txt.replace(/^#.*\n/, '').replace(/[#*|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160) : 'Encrypted summary of the older turns');
@@ -611,12 +619,12 @@ function card(u){
     if (u.out) ib('✎ Edit output', 'Edit what the tool returned to the model', () => startEdit(u.out.key, !editable(u.out.item)));
   } else {
     if (editable(it)) ib('✎ Edit', 'Edit the text (e)', () => startEdit(r.key, false));
-    ib('{ } JSON', 'Edit the raw JSON of this item', () => startEdit(r.key, true));
+    if (k !== 'system') ib('{ } JSON', 'Edit the raw JSON of this item', () => startEdit(r.key, true));
   }
   if (anyEdited) ib('↺ Revert', 'Undo your edits to this item', () => u.keys.forEach(x => { const rr = S.rows[S.idx.get(x)]; if (rr.edited) revert(rr); }));
-  ib(S.cut === u.last ? '✂ Unset fork point' : '✂ Fork here', S.cut === u.last ? 'Remove the fork point' : 'Fork after this item. Everything below is dropped (f)', () => setCut(u.last));
+  if (k !== 'system') ib(S.cut === u.last ? '✂ Unset fork point' : '✂ Fork here', S.cut === u.last ? 'Remove the fork point' : 'Fork after this item. Everything below is dropped (f)', () => setCut(u.last));
   if (r.inserted) ib('🗑 Discard', 'Delete this new message', () => mutate(() => { S.rows.splice(S.rows.indexOf(r), 1); }), 'danger');
-  else ib(r.deleted ? '↩ Restore' : '✕ Remove', r.deleted ? 'Put this item back (x)' : 'Remove this item from the fork (x)', () => setDeleted([key], !r.deleted), r.deleted ? '' : 'danger');
+  else if (k !== 'system') ib(r.deleted ? '↩ Restore' : '✕ Remove', r.deleted ? 'Put this item back (x)' : 'Remove this item from the fork (x)', () => setDeleted([key], !r.deleted), r.deleted ? '' : 'danger');
 
   const tg = collapsible && !editingHere;
   const hd = h('div', {class:'chd' + (tg ? ' tog' : ''), },
@@ -628,7 +636,8 @@ function card(u){
 
   if (isEditing(r)) { c.append(editor(r, !!S.editing.json)); return c; }
   if (!open) return c;
-  if (k === 'user' || k === 'assistant' || k === 'developer' || k === 'agentmsg'){
+  if (k === 'system') add(c, longText(txt, key, 5000, true));
+  else if (k === 'user' || k === 'assistant' || k === 'developer' || k === 'agentmsg'){
     add(c, longText(txt, key, 5000, k !== 'developer'));
     const im = images(it);
     if (im.length) c.append(h('div', {class:'imgs'}, im.map(x => /^(data:image\/|https?:)/.test(x.image_url) ? h('img', {src:x.image_url, loading:'lazy'}) : h('span', {class:'tag'}, 'image'))));
@@ -750,7 +759,7 @@ function renderPanel(){
     brk.append(k, a, b);
   }
   $('#mBrk').title = 'Estimate at about 4 characters per token. The model also adds its system prompt and tool list.';
-  $('#sKept').textContent = counted.length.toLocaleString();
+  $('#sKept').textContent = counted.filter(r => kindOf(r) !== 'system').length.toLocaleString();
   $('#sTurns').textContent = S.turns.filter(t => t.rows.some(r => !gone(r))).length;
   $('#forkBtn').disabled = !fin.length;
   updateWarn(fin);
@@ -870,6 +879,9 @@ async function load(win){
     S.rows = d.items.map(x => { const tok = tokOf(x.item); return {key:x.key, turn_id:x.turn_id, ts:x.ts, item:x.item, orig:JSON.stringify(x.item),
       ctx: x.item.type === 'message' && x.item.role === 'user' && !x.real_user, fromCompaction:x.from_compaction,
       deleted:false, inserted:false, edited:false, tok:tok, tok0:tok}; });
+    if (typeof d.system_prompt === 'string'){ const it = {type:'system_prompt', text:d.system_prompt}, tok = tokOf(it);
+      S.rows.unshift({key:'sys', turn_id:'__system__', ts:null, item:it, orig:JSON.stringify(it), ctx:false, fromCompaction:false,
+        deleted:false, inserted:false, edited:false, tok:tok, tok0:tok}); }
     Object.assign(S, {cut:null, undo:[], redo:[], sel:new Set(), anchor:null, focus:null, editing:null, open:new Set(), shut:new Set(), full:new Set(), banner:null, seq:0});
     $('#main').className = ''; $('#ref').value = 'codex://threads/' + d.id; $('#result').textContent = '';
     renderSource(d);
@@ -908,7 +920,8 @@ async function fork(){
   const btn = $('#forkBtn'); btn.disabled = true; btn.textContent = 'Creating…';
   try {
     const res = await api('/api/fork', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
-      source_id:S.thread.id, items:fin.map(r => ({turn_id:r.turn_id, item:r.item})), model:$('#model').value, effort:$('#effort').value,
+      source_id:S.thread.id, items:fin.filter(r => kindOf(r) !== 'system').map(r => ({turn_id:r.turn_id, item:r.item})),
+      system_prompt:(S.sysUnit && S.sysUnit.row.edited) ? S.sysUnit.row.item.text : undefined, model:$('#model').value, effort:$('#effort').value,
       name:$('#name').value, strip_reasoning:$('#strip').checked, open:$('#openApp').checked})});
     localStorage.removeItem(dkey());
     const copy = (txt, what) => navigator.clipboard.writeText(txt).then(() => toast('Copied ' + what + '.'), () => toast(txt, 8000));

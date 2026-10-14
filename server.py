@@ -111,7 +111,8 @@ def do_fork(body: dict) -> dict:
     if not items:
         raise ValueError("Nothing to fork: every item is removed.")
     res = ctxedit.write_fork(src, items, body.get("model") or None, body.get("effort") or None,
-                             strip_reasoning=bool(body.get("strip_reasoning", True)))
+                             strip_reasoning=bool(body.get("strip_reasoning", True)),
+                             system=body.get("system_prompt") if isinstance(body.get("system_prompt"), str) else None)
     res["turns"], res["warnings"] = register_fork(res["id"], (body.get("name") or "").strip())
     res["link"] = f"codex://threads/{res['id']}"
     if body.get("open") and can_open_links():

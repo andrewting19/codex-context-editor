@@ -116,15 +116,39 @@ def find_rollout(tid: str) -> str:
     if row and row.get("rollout_path") and os.path.exists(row["rollout_path"]):
         return row["rollout_path"]
     for base in ("sessions", "archived_sessions"):
-        hits = glob.glob(os.path.join(CODEX_HOME, base, "**", f"*{tid}.jsonl"), recursive=True)
+        root = os.path.join(CODEX_HOME, base, "**")
+        hits = glob.glob(os.path.join(root, f"*{tid}.jsonl"), recursive=True) +             glob.glob(os.path.join(root, f"*{tid}.jsonl.zst"), recursive=True)
         if hits:
             return sorted(hits)[-1]
     raise FileNotFoundError(f"No rollout file found for thread {tid}")
 
 
+def _zstd_decompress(raw: bytes) -> bytes:
+    try:
+        from compression import zstd  # Python 3.14+
+        return zstd.decompress(raw)
+    except ImportError:
+        pass
+    try:
+        import zstandard
+        return zstandard.ZstdDecompressor().decompressobj().decompress(raw)
+    except ImportError:
+        pass
+    import shutil
+    import subprocess
+    if shutil.which("zstd"):
+        return subprocess.run(["zstd", "-dc"], input=raw, capture_output=True, check=True).stdout
+    raise RuntimeError("This thread file is compressed (.zst). Install zstd or use Python 3.14 or newer to read it.")
+
+
 def read_lines(path: str, end: int | None = None) -> list[dict]:
     with open(path, "rb") as f:
-        data = f.read() if end is None else f.read(end)
+        data = f.read()
+    if path.endswith(".zst"):
+        # Codex compresses the files of archived threads.
+        data = _zstd_decompress(data)
+    if end is not None:
+        data = data[:end]
     out = []
     for raw in data.split(b"\n"):
         if not raw.strip():
@@ -145,6 +169,8 @@ def find_base_segment(tid: str, current_path: str) -> str:
         root = os.path.join(CODEX_HOME, base, "**")
         hits.update(glob.glob(os.path.join(root, f"*{tid}.jsonl"), recursive=True))
         hits.update(glob.glob(os.path.join(root, f"*{tid}_*.jsonl"), recursive=True))
+        hits.update(glob.glob(os.path.join(root, f"*{tid}.jsonl.zst"), recursive=True))
+        hits.update(glob.glob(os.path.join(root, f"*{tid}_*.jsonl.zst"), recursive=True))
     cands = [h for h in hits if os.path.basename(h) < cur and os.path.abspath(h) != os.path.abspath(current_path)]
     if not cands:
         raise FileNotFoundError(f"No base rollout segment found for {tid}")
@@ -271,6 +297,14 @@ def _preview(hist: list[dict], last: bool) -> str:
     return " ".join(txt.split())[:90]
 
 
+def system_prompt(meta: dict) -> str | None:
+    """The base instructions (system prompt) that Codex saved for the thread, or None."""
+    bi = meta.get("base_instructions")
+    if isinstance(bi, dict):
+        bi = bi.get("text")
+    return bi if isinstance(bi, str) else None
+
+
 def load_thread(ref: str, window: int | None = None) -> dict:
     """Load a thread. window selects a context window: 1 is the context just
     before the first compaction; None or the last number is the current context."""
@@ -314,6 +348,7 @@ def load_thread(ref: str, window: int | None = None) -> dict:
         "effort": last_tc.get("effort") or row.get("reasoning_effort"),
         "rollout_path": find_rollout(tid),
         "line_count": len(lines),
+        "system_prompt": system_prompt(meta),
         "items": items,
     }
 
@@ -412,7 +447,7 @@ def _fork_world_state(lines: list[dict], items: list[dict]) -> dict | None:
 
 
 def write_fork(source_id: str, items: list[dict], model: str | None, effort: str | None,
-               strip_reasoning: bool = True) -> dict:
+               strip_reasoning: bool = True, system: str | None = None) -> dict:
     """Write a new rollout file with the edited items. Returns {id, path}."""
     lines = load_chain(source_id)
     meta = copy.deepcopy(lines[0]["payload"])
@@ -430,6 +465,10 @@ def write_fork(source_id: str, items: list[dict], model: str | None, effort: str
     for k in ("history_base", "context_window", "forked_from_ordinal_exclusive", "forked_from_id"):
         meta.pop(k, None)
     meta.update({"id": new_id, "session_id": new_id, "timestamp": now_iso(), "thread_source": "user"})
+    if system is not None:
+        # Codex reads the system prompt for a resumed thread from session_meta.base_instructions.
+        bi = meta.get("base_instructions")
+        meta["base_instructions"] = dict(bi, text=system) if isinstance(bi, dict) else {"text": system}
 
     out: list[dict] = []
 

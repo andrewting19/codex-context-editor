@@ -67,6 +67,10 @@ Press **?** in the editor to see the keyboard shortcuts (`j`/`k` to move, `x` to
 - A fork is a new rollout file with the edited items, plus the user and assistant events that
   the Codex app shows as a transcript. It has the same working folder as the source, so it shows
   in the same project.
+- The system prompt (Codex's base instructions) is stored in the first line of the rollout. The
+  editor shows it as a card at the top. If you edit it, the fork gets your version.
+- Codex compresses the rollout files of archived threads (.jsonl.zst). The editor reads them with
+  Python 3.14's zstd module, the zstandard package, or the zstd command.
 - The fork also gets the source's record of which context Codex already injected (AGENTS.md,
   skills, environment, and so on) as it was at the fork point. Without it, Codex injects all of
   that context again on the next turn. If you remove one of these items, the editor leaves it out
