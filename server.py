@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import claudecode  # noqa: E402
 import ctxedit  # noqa: E402
 from appserver import AppServer, AppServerError  # noqa: E402
 
@@ -105,11 +106,48 @@ def register_fork(thread_id: str, name: str) -> tuple[int | None, list[str]]:
     return turns, warnings
 
 
+def source_of(tid: str) -> str:
+    """Which tool owns the id: "codex" or "claude"."""
+    try:
+        ctxedit.find_rollout(tid)
+        return "codex"
+    except Exception:
+        if claudecode.find_session(tid):
+            return "claude"
+        raise ValueError(f"No Codex thread or Claude Code session has the id {tid}.")
+
+
+def load_any(ref: str, window: int | None) -> dict:
+    tid = ctxedit.parse_thread_id(ref)
+    if source_of(tid) == "claude":
+        return claudecode.load_session(tid, window)
+    d = ctxedit.load_thread(tid, window)
+    d["source"] = "codex"
+    return d
+
+
+def list_all(q: str, src: str) -> list[dict]:
+    rows: list[dict] = []
+    if src in ("", "all", "codex"):
+        rows += [dict(r, source="codex") for r in ctxedit.list_threads(q)]
+    if src in ("", "all", "claude"):
+        rows += claudecode.list_sessions(q)
+    rows.sort(key=lambda r: r.get("updated_ms") or 0, reverse=True)
+    return rows[:80]
+
+
 def do_fork(body: dict) -> dict:
     src = ctxedit.parse_thread_id(body["source_id"])
     items = body.get("items") or []
     if not items:
         raise ValueError("Nothing to fork: every item is removed.")
+    if source_of(src) == "claude":
+        w = body.get("window")
+        return claudecode.write_fork(src, items, body.get("model") or None, body.get("effort") or None,
+                                     window=int(w) if str(w).isdigit() else None,
+                                     strip_reasoning=bool(body.get("strip_reasoning", True)),
+                                     system=body.get("system_prompt") if isinstance(body.get("system_prompt"), str) else None,
+                                     name=(body.get("name") or "").strip())
     res = ctxedit.write_fork(src, items, body.get("model") or None, body.get("effort") or None,
                              strip_reasoning=bool(body.get("strip_reasoning", True)),
                              system=body.get("system_prompt") if isinstance(body.get("system_prompt"), str) else None)
@@ -130,6 +168,7 @@ def get_info() -> dict:
     else:
         err = None
     return {"codex_home": ctxedit.CODEX_HOME, "codex_bin": codex, "codex_error": err,
+            "claude_home": claudecode.CLAUDE_HOME, "has_claude": os.path.isdir(claudecode.PROJECTS),
             "can_open_links": can_open_links()}
 
 
@@ -178,12 +217,12 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/info":
             return self._guard(get_info)
         if u.path == "/api/models":
-            return self._guard(get_models)
+            return self._guard(claudecode.models if q.get("source", [""])[0] == "claude" else get_models)
         if u.path == "/api/threads":
-            return self._guard(lambda: ctxedit.list_threads(q.get("q", [""])[0]))
+            return self._guard(lambda: list_all(q.get("q", [""])[0], q.get("source", [""])[0]))
         if u.path == "/api/thread":
             w = q.get("window", [""])[0]
-            return self._guard(lambda: ctxedit.load_thread(q.get("ref", [""])[0], int(w) if w.isdigit() else None))
+            return self._guard(lambda: load_any(q.get("ref", [""])[0], int(w) if w.isdigit() else None))
         self._send(404, {"error": "not found"})
 
     def do_POST(self):

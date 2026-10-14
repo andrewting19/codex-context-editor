@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Codex Context Editor</title>
+<title>Context Editor</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%E2%9C%82%EF%B8%8F%3C/text%3E%3C/svg%3E">
 <style>
@@ -72,7 +72,7 @@ main.home #outline,main.home #panel,main.home #bar{display:none}
 .thead .tact{display:flex;gap:4px;opacity:0}
 .thead:hover .tact{opacity:1}
 .tag{font-size:11px;padding:0 7px;border-radius:999px;background:var(--card2);color:var(--mute);white-space:nowrap;line-height:18px}
-.tag.edited{color:var(--warn)}.tag.new{color:var(--asst)}.tag.cmp{color:var(--acc)}.tag.bad{color:var(--bad)}
+.tag.cc{color:#d97757;background:rgba(217,119,87,.12)}.tag.edited{color:var(--warn)}.tag.new{color:var(--asst)}.tag.cmp{color:var(--acc)}.tag.bad{color:var(--bad)}
 .sz{font-size:11px;color:var(--faint);white-space:nowrap;font-variant-numeric:tabular-nums}
 .sz.md{color:var(--mute)}.sz.lg{color:var(--warn)}.sz.xl{color:var(--bad);font-weight:600}
 .card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 10px 8px 14px;scroll-margin-top:70px}
@@ -179,7 +179,7 @@ main.home #outline,main.home #panel,main.home #bar{display:none}
 <body>
 <header>
   <div class="logo" id="homeBtn" title="Recent threads">✂️ <span>Context Editor</span></div>
-  <input id="ref" placeholder="Paste a codex://threads/… link or a thread id" autocomplete="off" spellcheck="false">
+  <input id="ref" placeholder="Paste a codex://threads/… link, a Claude Code session id, or a thread id" autocomplete="off" spellcheck="false">
   <button class="primary" id="loadBtn">Load</button>
   <button class="ghost" id="helpBtn" title="Keyboard shortcuts (?)">⌨︎ Shortcuts</button>
 </header>
@@ -188,7 +188,7 @@ main.home #outline,main.home #panel,main.home #bar{display:none}
   <section id="center">
     <div id="bar">
       <select id="winSel" title="Context window"></select>
-      <button class="chip" data-f="context" title="Instructions and environment text that Codex adds">Injected context</button>
+      <button class="chip" data-f="context" title="Instructions and environment text that the tool adds">Injected context</button>
       <button class="chip" data-f="tool">Tool calls</button>
       <button class="chip" data-f="reasoning">Reasoning</button>
       <button class="chip" data-f="removed">Removed items</button>
@@ -204,7 +204,7 @@ main.home #outline,main.home #panel,main.home #bar{display:none}
     <div id="src" class="src"></div>
     <label class="pl" for="model">Model</label><select id="model"></select>
     <label class="pl" for="effort">Reasoning effort</label><select id="effort"></select>
-    <label class="pl" for="name">Name</label><input type="text" id="name" placeholder="Name in the Codex sidebar">
+    <label class="pl" for="name">Name</label><input type="text" id="name" placeholder="Name of the new thread">
     <label class="check"><input type="checkbox" id="strip" checked><span>Remove reasoning items<br><span class="muted" style="font-size:12px">Encrypted reasoning from one model can fail on another model.</span></span></label>
     <label class="check" id="openRow"><input type="checkbox" id="openApp" checked><span>Open the fork in Codex</span></label>
     <label class="pl">Fork context size</label>
@@ -268,12 +268,15 @@ function rel(ms){ if (!ms) return ''; const s = (Date.now() - ms) / 1000;
   if (s < 86400*30) return Math.floor(s/86400) + ' d ago'; return new Date(ms).toLocaleDateString(); }
 function shortPath(p){ const parts = (p || '').split(/[\\/]/).filter(Boolean); return parts.slice(-2).join('/'); }
 const provider = m => (m || '').includes('/') ? m.split('/')[0] : 'openai';
+const isClaude = () => !!(S.thread && S.thread.source === 'claude');
+const appName = () => isClaude() ? 'Claude Code' : 'Codex';
 let toastT;
 function toast(msg, ms, action){
   const t = $('#toast'); t.textContent = ''; add(t, msg);
   if (action) add(t, h('button', {class:'sm', onclick:()=>{ t.style.display='none'; action.fn(); }}, action.label));
   t.style.display = 'flex'; clearTimeout(toastT); toastT = setTimeout(() => t.style.display = 'none', ms || 3500);
 }
+function copyText(txt, what){ navigator.clipboard.writeText(txt).then(() => toast('Copied ' + what + '.'), () => toast(txt, 8000)); }
 async function api(path, opts){ const r = await fetch(path, opts); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j; }
 
 // ---------- items
@@ -291,7 +294,7 @@ function itemText(it){
   if (t === 'function_call') return it.arguments || '';
   if (t === 'custom_tool_call') return it.input || '';
   if (t === 'reasoning') return (it.summary || []).map(s => s.text || '').join('\n');
-  if (isOcx(it)) return ocxDecode(it.encrypted_content);
+  if (isOcx(it)) return typeof it.text === 'string' ? it.text : ocxDecode(it.encrypted_content);
   if (t === 'system_prompt') return it.text || '';
   return '';
 }
@@ -304,13 +307,13 @@ function setText(it, txt){
   } else if (/_output$/.test(t)) it.output = txt;
   else if (t === 'function_call') it.arguments = txt;
   else if (t === 'custom_tool_call') it.input = txt;
-  else if (isOcx(it)) it.encrypted_content = ocxEncode(txt);
+  else if (isOcx(it)){ if (typeof it.text === 'string') it.text = txt; else it.encrypted_content = ocxEncode(txt); }
   else if (t === 'system_prompt') it.text = txt;
 }
 // OpenCodex stores the compaction summaries it writes as "ocx1:" + base64(plain text). These can be read and edited.
 // Summaries that start with "gAAAA" are encrypted by OpenAI and only OpenAI can read them.
 const OCX = 'ocx1:';
-const isOcx = it => /compaction/.test(it.type || '') && typeof it.encrypted_content === 'string' && it.encrypted_content.startsWith(OCX);
+const isOcx = it => /compaction/.test(it.type || '') && ((typeof it.encrypted_content === 'string' && it.encrypted_content.startsWith(OCX)) || typeof it.text === 'string');
 function ocxDecode(s){ try { return new TextDecoder().decode(Uint8Array.from(atob(s.slice(OCX.length)), c => c.charCodeAt(0))); } catch (e) { return ''; } }
 function ocxEncode(txt){ const b = new TextEncoder().encode(txt); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return OCX + btoa(s); }
 const editable = it => isOcx(it) || it.type === 'system_prompt' || it.type === 'message' || it.type === 'agent_message' || it.type === 'function_call' || it.type === 'custom_tool_call' || /_output$/.test(it.type || '');
@@ -342,7 +345,7 @@ function who(r, k){
   return {user:'User', assistant: it.phase === 'commentary' ? 'Commentary' : 'Assistant', developer: it.role === 'system' ? 'System' : 'Developer',
     context:'Context', system:'System prompt', agentmsg:'Agent message', tool:'Tool', toolout:'Tool output', reasoning:'Reasoning', compaction:'Compaction'}[k];
 }
-function ctxTitle(txt){ const t = txt.trimStart(); const m = t.match(/^<([\w:.-]+)/); if (m) return '<' + m[1] + '>';
+function ctxTitle(txt, it){ if (it && it.cc_attachment) return it.cc_attachment.replace(/_/g, ' '); const t = txt.trimStart(); const m = t.match(/^<([\w:.-]+)/); if (m) return '<' + m[1] + '>';
   if (t.startsWith('# AGENTS.md')) return 'AGENTS.md'; return t.split('\n')[0].slice(0, 80); }
 function toolName(it){ return it.name || (it.type || '').replace(/_call$/, ''); }
 function toolSummary(it){
@@ -529,7 +532,7 @@ function turnHead(t){
   return h('div', {class:'thead', id:'t-' + t.n, 'data-n':t.n},
     h('b', null, 'Turn ' + t.n),
     first && first.ts ? h('span', null, fmtTs(first.ts)) : null,
-    first && first.fromCompaction ? h('span', {class:'tag cmp', title:'Codex kept this item when it compacted the thread'}, 'kept by compaction') : null,
+    first && first.fromCompaction ? h('span', {class:'tag cmp', title:appName() + ' kept this item when it compacted the thread'}, 'kept by compaction') : null,
     first && first.inserted ? h('span', {class:'tag new'}, 'new') : null,
     h('span', {class:'sz ' + szc(tok)}, fmtTok(tok) + ' tok'),
     h('span', {class:'line'}),
@@ -596,8 +599,8 @@ function card(u){
   const txt = itemText(it);
   if (k === 'tool') ttl = h('span', {class:'ttl mono click', onclick:toggle, title:'Show or hide'}, h('b', null, toolName(it)), '  ' + toolSummary(it));
   else if (k === 'toolout') ttl = h('span', {class:'ttl mono click', onclick:toggle}, txt.replace(/\s+/g, ' ').slice(0, 200));
-  else if (k === 'context') ttl = h('span', {class:'ttl mono click', onclick:toggle}, ctxTitle(txt));
-  else if (k === 'system') ttl = h('span', {class:'ttl click', onclick:toggle}, open ? 'The base instructions Codex sends before everything else' : txt.replace(/\s+/g, ' ').slice(0, 200));
+  else if (k === 'context') ttl = h('span', {class:'ttl mono click', onclick:toggle}, ctxTitle(txt, it));
+  else if (k === 'system') ttl = h('span', {class:'ttl click', onclick:toggle}, open ? 'The base instructions ' + appName() + ' sends before everything else' : txt.replace(/\s+/g, ' ').slice(0, 200));
   else if (k === 'developer') ttl = h('span', {class:'ttl click', onclick:toggle}, open ? 'Developer instructions' : txt.replace(/\s+/g, ' ').slice(0, 200));
   else if (k === 'reasoning') ttl = h('span', {class:'ttl click', onclick:toggle}, txt ? txt.replace(/\s+/g, ' ').slice(0, 200) : 'Encrypted reasoning');
   else if (k === 'compaction') ttl = h('span', {class:'ttl click', onclick:toggle}, isOcx(it) ? 'Summary of the older turns: ' + txt.replace(/^#.*\n/, '').replace(/[#*|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160) : 'Encrypted summary of the older turns');
@@ -766,7 +769,7 @@ function renderPanel(){
   document.querySelectorAll('.ptabs button').forEach(b => b.classList.toggle('on', b.dataset.t === S.ptab));
   const pl = $('#plist'); pl.textContent = '';
   const label = r => { const k = kindOf(r), t = itemText(r.item);
-    return k === 'tool' ? toolName(r.item) + ' ' + toolSummary(r.item) : k === 'context' ? ctxTitle(t) : k === 'reasoning' && !t ? 'encrypted' : k === 'compaction' && !isOcx(r.item) ? 'encrypted summary' : (t || who(r, k)).replace(/\s+/g, ' ').slice(0, 120); };
+    return k === 'tool' ? toolName(r.item) + ' ' + toolSummary(r.item) : k === 'context' ? ctxTitle(t, r.item) : k === 'reasoning' && !t ? 'encrypted' : k === 'compaction' && !isOcx(r.item) ? 'encrypted summary' : (t || who(r, k)).replace(/\s+/g, ' ').slice(0, 120); };
   if (S.ptab === 'changes'){
     const items = [];
     if (S.cut != null) items.push(h('div', {class:'pitem', onclick:() => jumpTo(S.cut)}, h('span', {class:'w cut'}, 'Fork point'),
@@ -796,12 +799,12 @@ function renderPanel(){
 }
 function updateWarn(fin){
   const w = [], tgt = $('#model').value, src = S.thread.model;
-  if (provider(tgt) !== provider(src) && !$('#strip').checked && fin.some(r => r.item.type === 'reasoning'))
+  if (!isClaude() && provider(tgt) !== provider(src) && !$('#strip').checked && fin.some(r => r.item.type === 'reasoning'))
     w.push('The model provider changes. Keep "Remove reasoning items" on, or the first turn can fail.');
-  if (provider(tgt) !== provider(src) && fin.some(r => /compaction/.test(r.item.type || '') && !isOcx(r.item)))
+  if (!isClaude() && provider(tgt) !== provider(src) && fin.some(r => /compaction/.test(r.item.type || '') && !isOcx(r.item)))
     w.push('The context has an encrypted compaction summary from ' + src + '. Another provider may not read it. Remove it if the first turn fails.');
   const last = fin[fin.length - 1];
-  if (last && kindOf(last) === 'user') w.push('The fork ends on a user message. Codex answers it when you send your next message.');
+  if (last && kindOf(last) === 'user') w.push('The fork ends on a user message. ' + appName() + ' answers it when you send your next message.');
   if (!fin.length) w.push('Every item is removed. Keep at least one item.');
   const el = $('#warn'); el.textContent = ''; w.forEach(x => el.append(h('div', null, '⚠ ' + x)));
 }
@@ -812,13 +815,15 @@ async function loadInfo(){
   if (!S.info.can_open_links){ $('#openRow').style.display = 'none'; $('#openApp').checked = false; }
   if (S.info.codex_error) toast('Codex problem: ' + S.info.codex_error, 9000);
   try { S.models = await api('/api/models'); } catch (e) { S.models = []; toast('Could not load the model list: ' + e.message, 6000); }
+  try { S.cmodels = await api('/api/models?source=claude'); } catch (e) { S.cmodels = []; }
 }
 function fillModels(current){
   const m = $('#model'); m.textContent = '';
-  const list = S.models.slice();
-  if (current && !list.some(x => x.id === current)) list.unshift({id:current, name:current, efforts:['low', 'medium', 'high', 'xhigh'], defaultEffort:'medium'});
+  const cl = isClaude(), list = (cl ? S.cmodels || [] : S.models).slice();
+  if (current && !list.some(x => x.id === current)) list.unshift(cl ? {id:current, name:current, efforts:((S.cmodels || [])[0] || {}).efforts || ['low', 'medium', 'high'], defaultEffort:'high'}
+    : {id:current, name:current, efforts:['low', 'medium', 'high', 'xhigh'], defaultEffort:'medium'});
   const groups = new Map();
-  for (const x of list){ const p = provider(x.id); if (!groups.has(p)) groups.set(p, []); groups.get(p).push(x); }
+  for (const x of list){ const p = cl ? 'Claude Code' : provider(x.id); if (!groups.has(p)) groups.set(p, []); groups.get(p).push(x); }
   for (const [p, xs] of groups){
     const g = h('optgroup', {label:p});
     xs.forEach(x => g.append(h('option', {value:x.id}, (x.name || x.id) + (x.id === current ? '  (source)' : ''))));
@@ -842,10 +847,10 @@ function showHome(){
   S.thread = null; $('#main').className = 'home'; $('#ref').value = '';
   history.replaceState(null, '', location.pathname);
   const list = $('#list'); list.textContent = '';
-  const q = h('input', {id:'tq', placeholder:'Search your threads by name, first message, or folder', autocomplete:'off'});
+  const q = h('input', {id:'tq', placeholder:'Search Codex threads and Claude Code sessions by name, first message, or folder', autocomplete:'off'});
   const tl = h('div', {id:'tlist'}, h('div', {class:'empty'}, 'Loading threads…'));
   list.append(h('div', {id:'home'}, h('h2', null, 'Edit what the model sees, then fork it'),
-    h('p', null, 'Pick a Codex thread. Remove, edit, or add items in its context, or go back to before a compaction. Then create a new thread from that point with the model you choose.'),
+    h('p', null, 'Pick a Codex thread or a Claude Code session. Remove, edit, or add items in its context, or go back to before a compaction. Then create a new thread from that point with the model you choose.'),
     q, tl));
   q.oninput = () => { clearTimeout(homeT); homeT = setTimeout(() => loadThreads(q.value), 200); };
   q.onkeydown = e => { if (e.key === 'Enter'){ const f = document.querySelector('.trow'); if (f) f.click(); } };
@@ -856,12 +861,12 @@ async function loadThreads(q){
   let rows; try { rows = await api('/api/threads?q=' + encodeURIComponent(q || '')); }
   catch (e) { tl.textContent = ''; tl.append(h('div', {class:'empty'}, 'Could not list threads: ' + e.message)); return; }
   tl.textContent = '';
-  if (!rows.length) tl.append(h('div', {class:'empty'}, q ? 'No threads match.' : 'No threads found in this Codex home.'));
+  if (!rows.length) tl.append(h('div', {class:'empty'}, q ? 'No threads match.' : 'No threads or sessions found.'));
   for (const t of rows){
     tl.append(h('div', {class:'trow', onclick:() => { $('#ref').value = t.id; load(); }},
       h('div', {class:'a'}, h('b', null, t.title), h('span', {class:'muted', style:'font-size:12px;white-space:nowrap'}, rel(t.updated_ms))),
       t.first && t.first !== t.title ? h('div', {class:'c'}, t.first) : null,
-      h('div', {class:'c', style:'font-size:11.5px'}, shortPath(t.cwd) + (t.model ? '  ·  ' + t.model : ''))));
+      h('div', {class:'c', style:'font-size:11.5px'}, t.source === 'claude' ? h('span', {class:'tag cc', style:'margin-right:6px'}, 'Claude Code') : null, shortPath(t.cwd) + (t.model ? '  ·  ' + t.model : ''))));
   }
 }
 
@@ -873,9 +878,9 @@ async function load(win){
   if (!S.thread){ $('#list').textContent = ''; $('#list').append(h('div', {class:'empty'}, 'Loading…')); }
   try {
     const q = '/api/thread?ref=' + encodeURIComponent(ref) + (win ? '&window=' + win : '');
-    const res = await Promise.all([api(q), S.models.length ? null : loadInfo()]);
+    const res = await Promise.all([api(q), S.models.length || (S.cmodels || []).length ? null : loadInfo()]);
     const d = res[0];
-    S.thread = {id:d.id, window:d.window, windows:d.windows, title:d.title, cwd:d.cwd, model:d.model, effort:d.effort, n:d.items.length};
+    S.thread = {id:d.id, source:d.source || 'codex', resume:d.resume_cmd, window:d.window, windows:d.windows, title:d.title, cwd:d.cwd, model:d.model, effort:d.effort, n:d.items.length};
     S.rows = d.items.map(x => { const tok = tokOf(x.item); return {key:x.key, turn_id:x.turn_id, ts:x.ts, item:x.item, orig:JSON.stringify(x.item),
       ctx: x.item.type === 'message' && x.item.role === 'user' && !x.real_user, fromCompaction:x.from_compaction,
       deleted:false, inserted:false, edited:false, tok:tok, tok0:tok}; });
@@ -883,7 +888,8 @@ async function load(win){
       S.rows.unshift({key:'sys', turn_id:'__system__', ts:null, item:it, orig:JSON.stringify(it), ctx:false, fromCompaction:false,
         deleted:false, inserted:false, edited:false, tok:tok, tok0:tok}); }
     Object.assign(S, {cut:null, undo:[], redo:[], sel:new Set(), anchor:null, focus:null, editing:null, open:new Set(), shut:new Set(), full:new Set(), banner:null, seq:0});
-    $('#main').className = ''; $('#ref').value = 'codex://threads/' + d.id; $('#result').textContent = '';
+    $('#main').className = ''; $('#ref').value = d.source === 'claude' ? d.id : 'codex://threads/' + d.id;
+    $('#openRow').style.display = d.source === 'claude' || !S.info.can_open_links ? 'none' : ''; $('#result').textContent = '';
     renderSource(d);
     $('#name').value = '✂️ ' + (d.title || 'Edited fork').slice(0, 70);
     fillModels(d.model);
@@ -908,7 +914,8 @@ function renderSource(d){
   add(s, [h('b', null, d.title || '(untitled)'), h('div', null, d.cwd || ''),
     h('div', null, 'Source model: ' + (d.model || '?') + (d.effort ? ' · ' + d.effort : '')),
     w && !w.current ? h('div', {style:'color:var(--acc);margin-top:4px'}, 'Showing the context before compaction ' + w.n + ' of ' + (d.windows.length - 1) + '.') : null,
-    S.info.can_open_links ? h('div', {style:'margin-top:4px'}, h('a', {href:'codex://threads/' + d.id}, 'Open source thread in Codex ↗')) : null]);
+    d.source === 'claude' ? h('div', {style:'margin-top:4px'}, h('span', {class:'tag cc'}, 'Claude Code'), ' ', h('a', {href:'#', onclick:e => { e.preventDefault(); copyText(d.resume_cmd, 'the resume command'); }, title:d.resume_cmd}, 'Copy resume command'))
+    : S.info.can_open_links ? h('div', {style:'margin-top:4px'}, h('a', {href:'codex://threads/' + d.id}, 'Open source thread in Codex ↗')) : null]);
 }
 function changeWindow(n){ if (S.thread && n !== S.thread.window) load(n); }
 
@@ -920,21 +927,25 @@ async function fork(){
   const btn = $('#forkBtn'); btn.disabled = true; btn.textContent = 'Creating…';
   try {
     const res = await api('/api/fork', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
-      source_id:S.thread.id, items:fin.filter(r => kindOf(r) !== 'system').map(r => ({turn_id:r.turn_id, item:r.item})),
+      source_id:S.thread.id, window:S.thread.window, items:fin.filter(r => kindOf(r) !== 'system').map(r => ({turn_id:r.turn_id, item:r.item})),
       system_prompt:(S.sysUnit && S.sysUnit.row.edited) ? S.sysUnit.row.item.text : undefined, model:$('#model').value, effort:$('#effort').value,
       name:$('#name').value, strip_reasoning:$('#strip').checked, open:$('#openApp').checked})});
     localStorage.removeItem(dkey());
-    const copy = (txt, what) => navigator.clipboard.writeText(txt).then(() => toast('Copied ' + what + '.'), () => toast(txt, 8000));
+    const copy = copyText;
     const box = h('div', {class:'result'},
       h('div', null, h('b', null, '✅ Fork created'), ' · ' + res.item_count + ' items in ' + res.turns + ' turns'),
       h('div', {class:'mono muted', style:'font-size:11.5px;margin-top:3px;word-break:break-all'}, res.id),
+      res.source === 'claude' ? h('div', {class:'mono', style:'font-size:11.5px;margin-top:8px;padding:6px 8px;background:var(--card2);border-radius:6px;word-break:break-all;user-select:all'}, res.resume_cmd) : null,
+      res.source === 'claude' ? h('div', {class:'acts'},
+        h('button', {class:'sm primary', onclick:() => copy(res.resume_cmd, 'the resume command')}, 'Copy resume command'),
+        h('button', {class:'sm', onclick:() => { $('#ref').value = res.id; load(); }}, 'Edit the fork')) :
       h('div', {class:'acts'},
         S.info.can_open_links ? h('a', {class:'abtn sm primary', href:res.link}, 'Open in Codex') : null,
         h('button', {class:'sm', onclick:() => copy(res.link, 'the link')}, 'Copy link'),
         h('button', {class:'sm', onclick:() => copy('codex resume ' + res.id, 'the command')}, 'Copy resume command'),
         h('button', {class:'sm', onclick:() => { $('#ref').value = res.id; load(); }}, 'Edit the fork')),
       (res.warnings || []).map(x => h('div', {class:'warn'}, '⚠ ' + x)),
-      h('div', {class:'muted', style:'font-size:12px;margin-top:8px'}, 'Send your next message in the fork to continue from this context.'));
+      h('div', {class:'muted', style:'font-size:12px;margin-top:8px'}, res.source === 'claude' ? 'Run the command in a terminal, then send your next message to continue from this context.' : 'Send your next message in the fork to continue from this context.'));
     const r = $('#result'); r.textContent = ''; r.append(box); box.scrollIntoView({block:'nearest'});
   } catch (e) { toast('Fork failed: ' + e.message, 8000); }
   btn.disabled = false; btn.textContent = 'Create forked thread';

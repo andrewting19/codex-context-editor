@@ -1,17 +1,23 @@
 """End-to-end test for the context editor on one machine.
 
-Usage: python3 selftest.py [--port 7317] [--thread ID]
-The server must run on the port. The script makes one fork, runs one real
+Usage: python3 selftest.py [--port 7317] [--thread ID] [--claude ID] [--claude-live]
+The server must run on the port. The script makes one Codex fork, runs one real
 turn on it, checks the reply, and archives the fork.
+If Claude Code sessions exist, it also forks a Claude session without edits and
+checks that the fork has the same items. --claude-live also runs one real turn
+with "claude -p". The Claude test forks are deleted at the end.
 """
-import argparse, json, os, sqlite3, sys, urllib.request
+import argparse, json, os, sqlite3, subprocess, sys, urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import claudecode
 import ctxedit
 from appserver import AppServer
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--port", type=int, default=7317)
 ap.add_argument("--thread")
+ap.add_argument("--claude", help="Claude Code session id to test")
+ap.add_argument("--claude-live", action="store_true", help="Also run one real Claude turn (costs tokens)")
 a = ap.parse_args()
 BASE = f"http://127.0.0.1:{a.port}"
 
@@ -89,6 +95,55 @@ finally:
     except Exception as e:
         print("ARCHIVE FAILED", e)
     s.close()
+
+
+def claude_test() -> bool:
+    sid = a.claude
+    if not sid:
+        for r in claudecode.list_sessions(limit=40):
+            d = get(f"/api/thread?ref={r['id']}")
+            if sum(1 for x in d["items"] if x["real_user"]) >= 2:
+                sid = r["id"]
+                break
+    if not sid:
+        print("CLAUDE skipped: no Claude Code session with two prompts")
+        return True
+    d = get(f"/api/thread?ref={sid}")
+    print("CLAUDE", sid, "windows", len(d["windows"]), "items", len(d["items"]))
+    made, good = [], True
+    strip = lambda xs: [{k: v for k, v in x["item"].items() if k != "cc_uuid"} for x in xs]
+    try:
+        for w in range(1, len(d["windows"]) + 1):
+            src = get(f"/api/thread?ref={sid}&window={w}")
+            items = [{"turn_id": x["turn_id"], "item": x["item"]} for x in src["items"]]
+            res = post("/api/fork", {"source_id": sid, "window": w, "items": items, "strip_reasoning": False})
+            made.append(res["path"])
+            f = get(f"/api/thread?ref={res['id']}")
+            want = strip(ctxedit._fix_tool_pairs(items))
+            same = want == strip(f["items"]) and f["system_prompt"] == src["system_prompt"]
+            print(f"CLAUDE window {w}: {len(want)} items, fork same: {same}")
+            good &= same
+        if a.claude_live:
+            items = [{"turn_id": x["turn_id"], "item": x["item"]} for x in d["items"]]
+            items.append({"turn_id": "new1", "item": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Note for later: the codeword is OTTER-58."}]}})
+            items.append({"turn_id": "new1", "item": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Noted. The codeword is OTTER-58."}]}})
+            res = post("/api/fork", {"source_id": sid, "window": d["window"], "items": items, "model": "haiku", "effort": "low"})
+            made.append(res["path"])
+            out = subprocess.run(["claude", "-p", "--resume", res["id"], "--model", "haiku",
+                                  "What is the codeword? Reply with only the codeword. Do not use tools."],
+                                 cwd=res["cwd"], capture_output=True, text=True, timeout=300).stdout
+            print("CLAUDE REPLY", out.strip()[:200])
+            good &= "OTTER-58" in out
+    finally:
+        for p in made:
+            if os.path.exists(p):
+                os.remove(p)
+        print("CLAUDE removed", len(made), "test forks")
+    return good
+
+
+if os.path.isdir(claudecode.PROJECTS):
+    ok = claude_test() and ok
 print("PASS" if ok else "FAIL")
 sys.exit(0 if ok else 1)
 

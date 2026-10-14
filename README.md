@@ -1,12 +1,14 @@
 # Codex Context Editor
 
-A small local web app for Codex. Load one of your Codex threads, see the context that the
-model sees, edit it, and fork it into a new thread in the same project. You can remove items,
+A small local web app for Codex and Claude Code. Load one of your Codex threads or Claude Code
+sessions, see the context that the model sees, edit it, and fork it into a new thread in the same
+project. You can remove items,
 edit text, add messages, cut the context at any point, go back to a context window from before a
 compaction, and choose the model and reasoning effort for the fork.
 
-The source thread does not change. The fork is a normal Codex thread: open it in the Codex app or
-with `codex resume <id>` and send your next message.
+The source thread does not change. A Codex fork is a normal Codex thread: open it in the Codex app
+or with `codex resume <id>` and send your next message. A Claude Code fork is a normal Claude Code
+session: the editor gives you a `claude --resume <id>` command to copy and run in a terminal.
 
 ## Requirements
 
@@ -14,6 +16,8 @@ with `codex resume <id>` and send your next message.
 - The Codex CLI (`codex`) on your `PATH`, or the Codex desktop app on macOS. Set `CODEX_BIN` to
   use a different binary.
 - Threads in `~/.codex` (or in `$CODEX_HOME` if you set it).
+- For Claude Code: sessions in `~/.claude/projects` (or in `$CLAUDE_CONFIG_DIR`). The editor
+  needs no Codex binary to edit Claude Code sessions. Tested with Claude Code 2.1.
 
 Tested on macOS and Linux with Codex CLI 0.155 to 0.160.
 
@@ -39,7 +43,8 @@ Then open http://127.0.0.1:7317 on your computer. The fork is written on the rem
 ## Use
 
 1. Pick a thread from the list of recent threads, or paste a thread link such as
-   `codex://threads/01a10d09-...` (or a thread id) and press **Load**.
+   `codex://threads/01a10d09-...`, a Claude Code session id, or a `claude --resume <id>` command,
+   and press **Load**. Claude Code sessions have an orange **Claude Code** label.
 2. Edit the context. Each item shows its estimated size in tokens. Large items are orange or red.
    - **Context windows** (left column): if the thread was compacted, select an earlier window.
      "Before compaction N" is the full context just before compaction N.
@@ -78,6 +83,25 @@ Press **?** in the editor to see the keyboard shortcuts (`j`/`k` to move, `x` to
 - The editor starts a private `codex app-server` process to get the model list and to make Codex
   index the new thread.
 - The server listens on 127.0.0.1 only and accepts requests only for local host names.
+
+### Claude Code sessions
+
+- Claude Code keeps each session as JSON lines in `~/.claude/projects/<folder>/<id>.jsonl`.
+  Messages form a tree through `parentUuid`. The editor follows the chain back from the newest
+  message, and follows each compaction back to the context before it, so you can fork from
+  before any compaction.
+- Each line becomes an editor item: prompts and replies are messages, tool calls and tool
+  results are tool cards, thinking blocks are reasoning, attachments (CLAUDE.md, skills,
+  environment, file contents, and so on) are injected context, and the compaction summary is
+  plain text that you can edit.
+- The system prompt comes from the `prompt_snapshot` record that Claude Code saves in the
+  session. Claude Code sends that record again on resume, so an edit to it changes the system
+  prompt of the fork.
+- A fork is a new session file in the same folder. Lines that you did not change are copied as
+  they are; changed lines get the new content. An edited attachment becomes a hidden note with
+  your text. Thinking blocks are signed by the model, so you can remove them but not edit them.
+- `claude --resume` finds sessions by the current folder, so the command starts with `cd` to the
+  session's project folder. The command also has `--model` and `--effort` for your choices.
 
 ## Limits
 
